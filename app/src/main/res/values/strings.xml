@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Aapda Seva</string>
+    <string name="nav_sos">SOS</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_contacts">Contacts</string>
+    <string name="nav_services">Services</string>
+    <string name="nav_ai_help">AI Help</string>
+    
+    <string name="title_aapda_seva">AAPDA SEVA\nआपदा सेवा</string>
+    <string name="sos_button">SOS\nआपातकाल</string>
+    <string name="fetching_location">Fetching location...</string>
+    <string name="no_landmark_found">No landmark found</string>
+    <string name="landmark_not_available">Landmark not available</string>
+    <string name="location_permission_denied">Location permission denied</string>
+    <string name="location_permission_required">Location permission required</string>
+    <string name="unknown_coordinates">Unknown coordinates</string>
+    <string name="lat_lon_format">Lat: %1$s, Lon: %2$s</string>
+    <string name="permissions_required_title">Permissions Required</string>
+    <string name="agree">Agree</string>
+    <string name="cancel">Cancel</string>
+</resources>

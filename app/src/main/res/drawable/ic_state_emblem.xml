@@ -1,0 +1,19 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:fillColor="#FF9933"
+        android:pathData="M60,60m-50,0a50,50 0,1 1,100,0a50,50 0,1 1,-100,0"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,60m-40,0a40,40 0,1 1,80,0a40,40 0,1 1,-80,0"/>
+    <!-- Simplified Chakra in the middle -->
+    <path
+        android:fillColor="#000080"
+        android:pathData="M60,60m-20,0a20,20 0,1 1,40,0a20,20 0,1 1,-40,0"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M59,42h2v36h-2z M42,59h36v2h-36z M47,47l25,25l-2,-2l-25,-25z M72,47l-25,25l2,-2l25,-25z"/>
+</vector>

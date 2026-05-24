@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">आपदा सेवा</string>
+    <string name="nav_sos">आपातकाल</string>
+    <string name="nav_map">नक्शा</string>
+    <string name="nav_contacts">संपर्क</string>
+    <string name="nav_services">सेवाएं</string>
+    <string name="nav_ai_help">AI सहायता</string>
+    
+    <string name="title_aapda_seva">AAPDA SEVA\nआपदा सेवा</string>
+    <string name="sos_button">SOS\nआपातकाल</string>
+    <string name="fetching_location">स्थान प्राप्त कर रहा है...</string>
+    <string name="no_landmark_found">कोई सीमाचिह्न नहीं मिला</string>
+    <string name="landmark_not_available">सीमाचिह्न उपलब्ध नहीं है</string>
+    <string name="location_permission_denied">स्थान अनुमति अस्वीकृत</string>
+    <string name="location_permission_required">स्थान अनुमति आवश्यक</string>
+    <string name="unknown_coordinates">अज्ञात निर्देशांक</string>
+    <string name="lat_lon_format">अक्षांश: %1$s, देशांतर: %2$s</string>
+    <string name="permissions_required_title">अनुमतियाँ आवश्यक हैं</string>
+    <string name="agree">सहमत</string>
+    <string name="cancel">रद्द करें</string>
+</resources>
