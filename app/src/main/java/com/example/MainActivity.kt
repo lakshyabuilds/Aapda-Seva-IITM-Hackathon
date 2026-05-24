@@ -79,18 +79,13 @@ class MainActivity : ComponentActivity() {
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = currentBackStackEntry?.destination?.route
                 
-                var triggerSos by remember { mutableStateOf(intent.getBooleanExtra("TRIGGER_SOS", false)) }
+                var triggerSosQueue by remember { mutableStateOf(intent.getBooleanExtra("TRIGGER_SOS", false)) }
                 
-                // Keep track of intent changes via a DisposableEffect
-                DisposableEffect(intent) {
-                    triggerSos = intent.getBooleanExtra("TRIGGER_SOS", false)
-                    onDispose { }
-                }
-
-                LaunchedEffect(triggerSos) {
-                    if (triggerSos) {
+                // We use a side-effect channel to prevent multiple triggers from recompositions
+                LaunchedEffect(triggerSosQueue) {
+                    if (triggerSosQueue) {
                         intent.removeExtra("TRIGGER_SOS")
-                        triggerSos = false
+                        triggerSosQueue = false
                         navController.navigate("sos_confirm") {
                             popUpTo(navController.graph.startDestinationId) {
                                 saveState = true
@@ -99,6 +94,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 
+                // Expose a method to handle new intents instead of trusting recomposition of 'intent' alone
+                DisposableEffect(Unit) {
+                    val listener = androidx.core.util.Consumer<Intent> { newIntent ->
+                        if (newIntent.getBooleanExtra("TRIGGER_SOS", false)) {
+                            triggerSosQueue = true
+                        }
+                    }
+                    addOnNewIntentListener(listener)
+                    onDispose {
+                        removeOnNewIntentListener(listener)
+                    }
+                }
+
                 @OptIn(ExperimentalMaterial3Api::class)
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),

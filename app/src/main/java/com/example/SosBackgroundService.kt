@@ -110,7 +110,7 @@ class SosBackgroundService : Service(), SensorEventListener {
 
     private fun triggerSosFromBackground() {
         val mainIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("TRIGGER_SOS", true)
         }
         startActivity(mainIntent)
@@ -141,7 +141,7 @@ class SosBackgroundService : Service(), SensorEventListener {
 
             val now = System.currentTimeMillis()
             if (mAccel > SHAKE_THRESHOLD) {
-                if (now - lastShakeTime > 2000) {
+                if (now - lastShakeTime > 10000) {
                     lastShakeTime = now
                     triggerSosFromBackground()
                 }
@@ -157,7 +157,7 @@ class SosBackgroundService : Service(), SensorEventListener {
             // 2. Sudden impact (high G) shortly after free fall
             if (gForce > 2.5f) {
                 if (now - lastFreeFallTime < 1500) {
-                    if (now - lastImpactTime > 5000) {
+                    if (now - lastImpactTime > 10000) {
                         lastImpactTime = now
                         triggerSosFromBackground()
                     }
