@@ -12,7 +12,7 @@ jobs:
     name: Build & Upload APK
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
     steps:
       - name: Checkout code
@@ -28,7 +28,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1' # Required for this project's AGP version
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+          cache-disabled: true
 
       - name: Create .env file for secrets
         # Creates .env file with secrets from GitHub Repository Secrets
@@ -47,8 +47,8 @@ jobs:
           fi
 
       - name: Build Debug APK
-        # We run the build with standard daemon to ensure KSP (Kotlin Symbol Processing) executes correctly
-        run: gradle assembleDebug --stacktrace
+        # We run the build with --no-daemon and --no-configuration-cache to prevent KSP and daemon memory crashes on CI
+        run: gradle assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
