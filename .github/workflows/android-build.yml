@@ -12,7 +12,7 @@ jobs:
     name: Build & Upload APK
     runs-on: ubuntu-latest
     env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -47,8 +47,9 @@ jobs:
           fi
 
       - name: Build Debug APK
-        # We run the build with --no-daemon and --no-configuration-cache to prevent KSP and daemon memory crashes on CI
-        run: gradle assembleDebug --stacktrace --no-daemon --no-configuration-cache
+        # We run the build with stacktrace enabled for detailed error reporting
+        # Standard daemon is used to fix KSP (Kotlin Symbol Processing) null pointer crash in CI
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
