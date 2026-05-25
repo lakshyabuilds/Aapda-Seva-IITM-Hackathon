@@ -221,9 +221,16 @@ fun SosConfirmScreen(
                         e.printStackTrace()
                     }
 
-                    SosRetrofitClient.service.dispatchSos(payload)
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            SosRetrofitClient.service.dispatchSos(payload)
+                            android.util.Log.d("SosConfirmScreen", "Payload sent to dashboard successfully")
+                        } catch (e: Exception) {
+                            android.util.Log.e("SosConfirmScreen", "Failed to dispatch SOS payload", e)
+                        }
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("SosApiError", "Failed to dispatch SOS", e)
+                    android.util.Log.e("SosApiError", "Failed to compile SOS payload", e)
                 }
                 
                 // Do not wait out of state to fire phone call to avoid Background Activity Launch limitations
@@ -244,12 +251,21 @@ fun SosConfirmScreen(
                         }
                         contacts.forEach { contact ->
                             try {
-                                smsManager?.sendTextMessage(contact.phoneNumber, null, message, null, null)
+                                val parts = smsManager?.divideMessage(message)
+                                if (parts != null) {
+                                    smsManager.sendMultipartTextMessage(contact.phoneNumber, null, parts, null, null)
+                                } else {
+                                    // Fallback if divideMessage fails
+                                    smsManager?.sendTextMessage(contact.phoneNumber, null, message, null, null)
+                                }
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         }
-                    } else {
+                    }
+                    
+                    // Fallback to manual intent if no permission or as a backup
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
                         if (contacts.isNotEmpty()) {
                             try {
                                 val numbers = contacts.joinToString(";") { it.phoneNumber }
@@ -264,31 +280,37 @@ fun SosConfirmScreen(
                             }
                         }
                     }
+
+                    // Trigger loud dial
+                    val contactToCall = contacts.firstOrNull()?.phoneNumber ?: "112"
+                    try {
+                        val callIntent = Intent(Intent.ACTION_CALL).apply {
+                            data = Uri.parse("tel:$contactToCall")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        }
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                            context.startActivity(callIntent)
+                        } else {
+                            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                data = Uri.parse("tel:112")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                            }
+                            context.startActivity(dialIntent)
+                        }
+                    } catch (e: Exception) {
+                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                            data = Uri.parse("tel:112")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        }
+                        try {
+                            context.startActivity(dialIntent)
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+
                 } catch (e: Exception) {
                     e.printStackTrace()
-                }
-                
-                // Trigger loud dial
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                    val callIntent = Intent(Intent.ACTION_CALL).apply {
-                        data = Uri.parse("tel:112")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                    }
-                    try {
-                        context.startActivity(callIntent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                } else {
-                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                        data = Uri.parse("tel:112")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    try {
-                        context.startActivity(dialIntent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
                 }
 
                 state = SosConfirmState.COMPLETED

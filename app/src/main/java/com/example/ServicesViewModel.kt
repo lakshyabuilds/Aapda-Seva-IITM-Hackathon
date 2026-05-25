@@ -50,33 +50,7 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                 
                 val fetchedServices = mutableListOf<EmergencyServiceEntity>()
                 
-                // Fetch using async/await to run concurrently and prevent blocking Nominatim requests
-                val overpassJob = async { fetchOverpassServices(lat, lon) }
-                val wikidataJob = async { fetchWikidataServices(lat, lon) }
-                
-                // Fetch from Nominatim API with delays to prevent HTTP 429 Too Many Requests
-                val nominatimJob = async {
-                    val list = mutableListOf<EmergencyServiceEntity>()
-                    list.addAll(fetchNominatimServices("hospital", lat, lon, "Hospital"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("police", lat, lon, "Police Station"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("fire station", lat, lon, "Rescue Service"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("towing", lat, lon, "Towing Service"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("mechanic", lat, lon, "Puncture Shop"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("tyre repair", lat, lon, "Puncture Shop"))
-                    kotlinx.coroutines.delay(1200)
-                    list.addAll(fetchNominatimServices("car dealer", lat, lon, "Vehicle Showroom"))
-                    list
-                }
-                
-                // Await results from background queries
-                fetchedServices.addAll(overpassJob.await())
-                fetchedServices.addAll(wikidataJob.await())
-                fetchedServices.addAll(nominatimJob.await())
+                fetchedServices.addAll(fetchOverpassServices(lat, lon))
 
                 // Spatial deduplication: Group POIs that refer to the same physical entity
                 val uniqueServices = mutableListOf<EmergencyServiceEntity>()
@@ -190,95 +164,6 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                         ))
                     }
                 }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return list
-    }
-
-    private suspend fun fetchNominatimServices(query: String, lat: Double, lon: Double, mappedType: String): List<EmergencyServiceEntity> {
-        val list = mutableListOf<EmergencyServiceEntity>()
-        try {
-            val response = NominatimRetrofitClient.service.getServices(
-                query = query,
-                lat = lat,
-                lon = lon
-            )
-            
-            for (item in response) {
-                val id = item.osm_id?.toString() ?: continue
-                val name = item.name ?: "Unknown Name"
-                if (name.isEmpty() || name == "Unknown Name") continue
-                
-                val locLat = item.lat?.toDoubleOrNull() ?: continue
-                val locLon = item.lon?.toDoubleOrNull() ?: continue
-                
-                val phone = item.extratags?.phone ?: ""
-                
-                list.add(EmergencyServiceEntity(
-                    id = "nom_$id",
-                    name = name,
-                    type = mappedType,
-                    lat = locLat,
-                    lon = locLon,
-                    phone = phone,
-                    source = "Nominatim"
-                ))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return list
-    }
-    
-    private suspend fun fetchWikidataServices(lat: Double, lon: Double): List<EmergencyServiceEntity> {
-        val list = mutableListOf<EmergencyServiceEntity>()
-        try {
-            val query = """
-                SELECT ?item ?itemLabel ?lat ?lon ?phone WHERE {
-                  SERVICE wikibase:around { 
-                    ?item wdt:P625 ?location . 
-                    bd:serviceParam wikibase:center "Point($lon $lat)"^^geo:wktLiteral . 
-                    bd:serviceParam wikibase:radius "15" . 
-                  }
-                  { ?item wdt:P31/wdt:P279* wd:Q16917. } UNION { ?item wdt:P31/wdt:P279* wd:Q1322234. }
-                  ?item p:P625/psv:P625 ?coord_node .
-                  ?coord_node wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lon .
-                  OPTIONAL { ?item wdt:P1329 ?phone . }
-                  SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
-                } LIMIT 50
-            """.trimIndent() // Q16917 = hospital, Q1322234 = police station
-            
-            val response = WikidataRetrofitClient.service.getServices(query = query)
-            val bindings = response.results?.bindings
-            
-            if (bindings != null) {
-                for (binding in bindings) {
-                    val itemUri = binding.item?.value ?: ""
-                    val id = itemUri.substringAfterLast("/")
-                    
-                    val label = binding.itemLabel?.value ?: "Wikidata Location"
-                    val itemLat = binding.lat?.value?.toDoubleOrNull()
-                    val itemLon = binding.lon?.value?.toDoubleOrNull()
-                    
-                    val phone = binding.phone?.value ?: ""
-                    
-                    // Infer from label since wikidata SPARQL UNION doesn't easily return branch taken
-                    val type = if (label.lowercase().contains("police")) "Police Station" else "Hospital"
-                    
-                    if (itemLat != null && itemLon != null) {
-                        list.add(EmergencyServiceEntity(
-                            id = "wiki_$id",
-                            name = label,
-                            type = type,
-                            lat = itemLat,
-                            lon = itemLon,
-                            phone = phone,
-                            source = "Wikidata"
-                        ))
-                    }
-                }
-            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

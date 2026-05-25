@@ -672,11 +672,11 @@ fun SOSAppContent(
         // Center Button
         Button(
             onClick = {
-                if (!locationPermissionsState.allPermissionsGranted) {
+                if (!hasLocationPerm) {
                     showPermissionRationale = true
                 } else if (!hasNotificationPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     showNotificationRationale = true
-                } else if (hasLocationPerm && backgroundLocationState != null && backgroundLocationState.status.isGranted == false) {
+                } else if (backgroundLocationState != null && backgroundLocationState.status.isGranted == false) {
                     showBackgroundPermissionRationale = true
                 } else {
                     onSosClick()

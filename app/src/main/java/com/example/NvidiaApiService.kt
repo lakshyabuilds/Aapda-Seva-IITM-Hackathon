@@ -81,8 +81,7 @@ suspend fun generateAiHelpResponse(
             "STRICTLY follow these rules: " +
             "1. Answer in max 1 line. " +
             "2. DO NOT use any formatting, like asterisks, bold, or lists. " +
-            "3. Be direct and give simple, clear instructions. " +
-            "4. Always prepend: '⚠️ Call local emergency services. '\n" +
+            "3. Be direct and give simple, clear instructions. \n" +
             "The user's current location is: $locationText"
 
     val request = NvidiaChatRequest(
