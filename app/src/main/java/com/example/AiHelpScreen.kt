@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -54,63 +56,88 @@ fun AiHelpScreen(location: Location?) {
     var recognizedText by remember { mutableStateOf("") }
     var responseText by remember { mutableStateOf("Hold the microphone button and speak your query.") }
     var isLoading by remember { mutableStateOf(false) }
+    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    DisposableEffect(context) {
+        val textToSpeech = TextToSpeech(context) { _ -> }
+        tts = textToSpeech
+        onDispose {
+            textToSpeech.stop()
+            textToSpeech.shutdown()
+        }
+    }
+
+    val fallbackError = stringResource(id = R.string.ai_fallback_error)
+    val fallbackEmpty = stringResource(id = R.string.ai_fallback_empty)
 
     val speechRecognizer = remember {
-        SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {
-                    isRecording = false
-                }
-                override fun onError(error: Int) {
-                    isRecording = false
-                    val errorMsg = when (error) {
-                        SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                        SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                        SpeechRecognizer.ERROR_NO_MATCH -> "No speech heard"
-                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
-                        else -> "Failed to recognize speech"
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+        if (recognizer == null) {
+            null
+        } else {
+            recognizer.apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {
+                        isRecording = false
                     }
-                    if (recognizedText.isBlank()) {
-                        responseText = errorMsg
-                    }
-                }
-                override fun onResults(results: Bundle?) {
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        val text = matches[0]
-                        recognizedText = text
-                        responseText = "Thinking..."
-                        isLoading = true
-                        
-                        coroutineScope.launch {
-                            val locText = location?.let { 
-                                "Lat: ${"%.4f".format(it.latitude)}, Lon: ${"%.4f".format(it.longitude)}" 
-                            } ?: "Unknown"
-                            val aiResponse = generateAiHelpResponse(text, locText)
-                            responseText = aiResponse
-                            isLoading = false
+                    override fun onError(error: Int) {
+                        isRecording = false
+                        val errorMsg = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
+                            SpeechRecognizer.ERROR_NETWORK -> "Network error"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech heard"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
+                            else -> "Failed to recognize speech"
+                        }
+                        if (recognizedText.isBlank()) {
+                            responseText = errorMsg
                         }
                     }
-                }
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        recognizedText = matches[0]
+                    override fun onResults(results: Bundle?) {
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (!matches.isNullOrEmpty()) {
+                            val text = matches[0]
+                            recognizedText = text
+                            responseText = "Thinking..."
+                            isLoading = true
+                            
+                            coroutineScope.launch {
+                                val locText = location?.let { 
+                                    "Lat: ${"%.4f".format(it.latitude)}, Lon: ${"%.4f".format(it.longitude)}" 
+                                } ?: "Unknown"
+                                val aiResponse = generateAiHelpResponse(text, locText, fallbackError, fallbackEmpty)
+                                val cleanResponse = aiResponse.replace("*", "").replace("#", "").replace("`", "").trim()
+                                responseText = cleanResponse
+                                isLoading = false
+                                try {
+                                    val ttsText = cleanResponse.replace("⚠️", "").take(3900)
+                                    tts?.speak(ttsText, TextToSpeech.QUEUE_FLUSH, null, null)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
                     }
-                }
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (!matches.isNullOrEmpty()) {
+                            recognizedText = matches[0]
+                        }
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            speechRecognizer.destroy()
+            speechRecognizer?.destroy()
         }
     }
 
@@ -166,12 +193,20 @@ fun AiHelpScreen(location: Location?) {
                                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                                 }
-                                speechRecognizer.startListening(intent)
+                                try {
+                                    speechRecognizer?.startListening(intent)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
                                 
                                 tryAwaitRelease()
                                 
                                 isRecording = false
-                                speechRecognizer.stopListening()
+                                try {
+                                    speechRecognizer?.stopListening()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
                             } else {
                                 recordAudioPermissionState.launchPermissionRequest()
                             }
@@ -238,17 +273,25 @@ fun AiHelpScreen(location: Location?) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val quickActions = listOf(
-                "Bleeding" to "Apply firm, direct pressure over the wound with a clean cloth. Keep pressing until bleeding stops.",
-                "Choking" to "Stand behind them. Give 5 back blows between shoulder blades. If still choking, give 5 abdominal thrusts (Heimlich maneuver).",
-                "Burn" to "Run cool (not cold) water over the burn for 10-20 minutes. Do not pop blisters. Cover with a clean, dry, non-fluffy cloth.",
-                "Fracture" to "Do not try to realign the bone. Immobilize the injured area and apply a cold pack wrapped in cloth to reduce swelling.",
-                "Heart Attack" to "Call emergency services immediately. Have the person sit, rest, and keep calm. If they have prescribed nitroglycerin, help them take it."
+                Pair(R.string.guide_bleeding_title, R.string.guide_bleeding_desc),
+                Pair(R.string.guide_choking_title, R.string.guide_choking_desc),
+                Pair(R.string.guide_burn_title, R.string.guide_burn_desc),
+                Pair(R.string.guide_fracture_title, R.string.guide_fracture_desc),
+                Pair(R.string.guide_heart_attack_title, R.string.guide_heart_attack_desc)
             )
-            items(quickActions) { (title, guide) ->
+            items(quickActions) { (titleRes, guideRes) ->
+                val title = stringResource(id = titleRes)
+                val guide = stringResource(id = guideRes)
+                
                 AssistChip(
                     onClick = { 
                         recognizedText = title
                         responseText = guide 
+                        try {
+                            tts?.speak(guide.take(3900), TextToSpeech.QUEUE_FLUSH, null, null)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     },
                     label = { Text(title) },
                     leadingIcon = {

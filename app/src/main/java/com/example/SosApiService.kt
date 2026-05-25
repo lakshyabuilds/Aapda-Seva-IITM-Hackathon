@@ -59,7 +59,7 @@ interface SosApiService {
     @POST("api/webhook/sos")
     suspend fun dispatchSos(
         @Body payload: SosPayload
-    )
+    ): okhttp3.ResponseBody
 }
 
 object SosRetrofitClient {

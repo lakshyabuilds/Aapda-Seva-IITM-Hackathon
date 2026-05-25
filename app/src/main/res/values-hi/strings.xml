@@ -18,4 +18,20 @@
     <string name="permissions_required_title">अनुमतियाँ आवश्यक हैं</string>
     <string name="agree">सहमत</string>
     <string name="cancel">रद्द करें</string>
+    <string name="bg_permission_required_title">बैकग्राउंड लोकेशन</string>
+    <string name="bg_permission_rationale">ऐप बंद होने पर शेक-एंड-फॉल (हिलने और गिरने) डिटेक्शन को निर्देशांक प्राप्त करने में सक्षम बनाने के लिए, कृपया ऐप सेटिंग्स में "Allow all the time" चुनें।</string>
+    <string name="settings">सेटिंग्स</string>
+
+    <string name="ai_fallback_error">त्रुटि: इंटरनेट कनेक्शन नहीं मिल रहा है। कृपया ऑफलाइन विकल्पों का उपयोग करें या तुरंत 112 डायल करें।</string>
+    <string name="ai_fallback_empty">क्षमा करें, मैं अभी आपकी सहायता करने में असमर्थ हूँ।</string>
+    <string name="guide_bleeding_title">खून बहना</string>
+    <string name="guide_bleeding_desc">घाव पर साफ कपड़े से जोर से और सीधा दबाव डालें। जब तक खून बहना बंद न हो जाए तब तक दबाव बनाए रखें।</string>
+    <string name="guide_choking_title">दम घुटना</string>
+    <string name="guide_choking_desc">उनके पीछे खड़े हो जाएं। कंधे के ब्लेड के बीच 5 बार थपथपाएं। यदि फिर भी दम घुट रहा हो, तो पेट पर 5 बार दबाव डालें (Heimlich maneuver)।</string>
+    <string name="guide_burn_title">जलना</string>
+    <string name="guide_burn_desc">जले हुए हिस्से पर 10-20 मिनट तक ठंडा (बर्फ का नहीं) पानी डालें। फफोले न फोड़ें। एक साफ, सूखे और रोएं रहित कपड़े से ढकें।</string>
+    <string name="guide_fracture_title">हड्डी टूटना</string>
+    <string name="guide_fracture_desc">हड्डी को सीधा करने की कोशिश न करें। चोट वाले हिस्से को स्थिर रखें और सूजन कम करने के लिए कपड़े में लपेट कर ठंडा पैक (आइस पैक) लगाएं।</string>
+    <string name="guide_heart_attack_title">दिल का दौरा</string>
+    <string name="guide_heart_attack_desc">तुरंत आपातकालीन सेवाओं को कॉल करें। व्यक्ति को बैठाएं, आराम करने दें और शांत रखें। यदि उनके पास निर्धारित नाइट्रोग्लिसरीन है, तो उसे लेने में मदद करें।</string>
 </resources>

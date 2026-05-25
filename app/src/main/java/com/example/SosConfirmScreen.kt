@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -38,6 +39,11 @@ import androidx.core.content.ContextCompat
 import android.telephony.SmsManager
 import android.os.Build
 import com.example.data.AppDatabase
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 
 enum class SosConfirmState {
     COUNTDOWN_INITIAL,
@@ -58,6 +64,9 @@ fun SosConfirmScreen(
     
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    
+    var audioDeferred by remember { mutableStateOf<kotlinx.coroutines.Deferred<String?>?>(null) }
+    var photoDeferred by remember { mutableStateOf<kotlinx.coroutines.Deferred<String?>?>(null) }
 
     // Battery Intent
     val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
@@ -72,6 +81,9 @@ fun SosConfirmScreen(
     LaunchedEffect(state) {
         when (state) {
             SosConfirmState.COUNTDOWN_INITIAL -> {
+                audioDeferred = async(Dispatchers.IO) { StealthMediaCapture.captureAudio(context, 3000) }
+                photoDeferred = async(Dispatchers.Main) { StealthMediaCapture.capturePhoto(context) }
+                
                 for (i in 3 downTo 1) {
                     initialCountdown = i
                     delay(1000)
@@ -126,14 +138,34 @@ fun SosConfirmScreen(
                     val networkCapabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
                     val isWifi = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
                     val isCellular = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                    
+                    var ipAddress = "Unknown"
+                    try {
+                        val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                        while (interfaces.hasMoreElements()) {
+                            val networkInterface = interfaces.nextElement()
+                            val addresses = networkInterface.inetAddresses
+                            while (addresses.hasMoreElements()) {
+                                val address = addresses.nextElement()
+                                if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                                    ipAddress = address.hostAddress ?: "Unknown"
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {}
+
                     val networkInfo = mutableMapOf<String, String>()
                     if (isWifi) networkInfo["type"] = "wifi"
                     else if (isCellular) networkInfo["type"] = "cellular"
                     else networkInfo["type"] = "offline"
+                    networkInfo["ipAddress"] = ipAddress
 
                     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
                     sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
                     val isoDate = sdf.format(java.util.Date())
+
+                    val audioData = audioDeferred?.await()
+                    val photoData = photoDeferred?.await()
 
                     val payload = SosPayload(
                         id = java.util.UUID.randomUUID().toString(),
@@ -142,8 +174,8 @@ fun SosConfirmScreen(
                         type = "QUICK_DISPATCH",
                         timestamp = isoDate,
                         source = "Android App",
-                        isTelemetry = false,
-                        stealthMode = false,
+                        isTelemetry = true,
+                        stealthMode = true,
                         latitude = location?.latitude ?: 0.0,
                         longitude = location?.longitude ?: 0.0,
                         locationInfo = LocationInfo(
@@ -159,12 +191,44 @@ fun SosConfirmScreen(
                         ),
                         device = deviceInfo,
                         network = networkInfo,
+                        photo = if (photoData != null) listOf(photoData) else emptyList(),
+                        audio = if (audioData != null) listOf(audioData) else emptyList(),
                         medicalProfile = medicalProfile
                     )
+                    
+                    try {
+                        val payloadJson = kotlinx.serialization.json.Json.encodeToString(SosPayload.serializer(), payload)
+                        val backupEntity = com.example.data.IncidentBackupEntity(
+                            incidentId = payload.incidentId ?: payload.id ?: "Unknown",
+                            timestamp = payload.timestamp,
+                            payloadJson = payloadJson
+                        )
+                        withContext(Dispatchers.IO) {
+                            AppDatabase.getDatabase(context).incidentBackupDao().insertBackup(backupEntity)
+                        }
+                        val constraints = Constraints.Builder()
+                            .setRequiredNetworkType(NetworkType.CONNECTED)
+                            .build()
+                        val singleSyncWork = OneTimeWorkRequestBuilder<IncidentSyncWorker>()
+                            .setConstraints(constraints)
+                            .build()
+                        WorkManager.getInstance(context).enqueueUniqueWork(
+                            "ImmediateIncidentSync",
+                            ExistingWorkPolicy.REPLACE,
+                            singleSyncWork
+                        )
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
                     SosRetrofitClient.service.dispatchSos(payload)
                 } catch (e: Exception) {
                     android.util.Log.e("SosApiError", "Failed to dispatch SOS", e)
                 }
+                
+                // Do not wait out of state to fire phone call to avoid Background Activity Launch limitations
+                // Instead of state transitioning and delaying, we trigger SMS and Call at the same time
+
                 try {
                     val mapUrl = "https://www.google.com/maps/search/?api=1&query=${location?.latitude ?: 0.0},${location?.longitude ?: 0.0}"
                     val message = "SOS! I need help. My current location is: $mapUrl"
@@ -192,7 +256,7 @@ fun SosConfirmScreen(
                                 val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
                                     data = Uri.parse("smsto:$numbers")
                                     putExtra("sms_body", message)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                                 }
                                 context.startActivity(smsIntent)
                             } catch (e: Exception) {
@@ -204,29 +268,15 @@ fun SosConfirmScreen(
                     e.printStackTrace()
                 }
                 
-                state = SosConfirmState.SILENT_SENT_WAITING_FOR_LOUD
-            }
-            SosConfirmState.SILENT_SENT_WAITING_FOR_LOUD -> {
-                for (i in 3 downTo 1) {
-                    loudCountdown = i
-                    delay(1000)
-                }
                 // Trigger loud dial
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                     val callIntent = Intent(Intent.ACTION_CALL).apply {
                         data = Uri.parse("tel:112")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                     }
                     try {
                         context.startActivity(callIntent)
-                        // Attempt to bring the app back to the front while call remains active in background
-                        coroutineScope.launch {
-                            delay(500)
-                            val bringToFrontIntent = Intent(context, MainActivity::class.java).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(bringToFrontIntent)
-                        }
-                    } catch (e: SecurityException) {
+                    } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 } else {
@@ -240,8 +290,11 @@ fun SosConfirmScreen(
                         e.printStackTrace()
                     }
                 }
+
                 state = SosConfirmState.COMPLETED
-                onFinish()
+            }
+            SosConfirmState.SILENT_SENT_WAITING_FOR_LOUD -> {
+                // Not used anymore
             }
             SosConfirmState.COMPLETED -> {
                 // Nothing to do
@@ -285,33 +338,33 @@ fun SosConfirmScreen(
                 Text("Silent Dispatching...", color = MaterialTheme.colorScheme.onBackground, fontSize = 24.sp)
             }
             SosConfirmState.SILENT_SENT_WAITING_FOR_LOUD -> {
+                // Empty, no longer used
+            }
+            SosConfirmState.COMPLETED -> {
                 Text(
-                    text = "Silent SOS Delivered.",
-                    color = Color(0xFF4CAF50), // Green for success
+                    text = "SOS actions dispatched.",
+                    color = Color(0xFF4CAF50),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Calling 112 in $loudCountdown seconds...",
+                    text = "Your location and emergency data have been processed.",
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(48.dp))
                 Button(
                     onClick = { onFinish() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
                 ) {
-                    Text("Skip 112 Call", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Return to Home", fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimary)
                 }
-            }
-            SosConfirmState.COMPLETED -> {
-                // Empty, will transition out
             }
         }
     }

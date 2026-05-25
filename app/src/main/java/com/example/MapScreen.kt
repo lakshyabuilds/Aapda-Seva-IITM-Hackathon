@@ -88,12 +88,7 @@ fun MapScreen(
     var pois by remember { mutableStateOf<List<Poi>>(emptyList()) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Initialize osmdroid configuration
-    LaunchedEffect(Unit) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        Configuration.getInstance().load(context, prefs)
-        Configuration.getInstance().userAgentValue = context.packageName
-    }
+    // Configuration is now initialized securely in MainActivity to avoid race conditions.
 
     LaunchedEffect(location) {
         if (location != null && pois.isEmpty()) {
@@ -101,10 +96,8 @@ fun MapScreen(
                 val fetchedPois = fetchNearbyPois(location.latitude, location.longitude)
                 val wikiPois = fetchWikipediaPois(location.latitude, location.longitude)
                 val quakePois = fetchEarthquakePois(location.latitude, location.longitude)
-                val indianWikiPois = fetchIndianWikidataPois(location.latitude, location.longitude)
-                val indianInfraPois = fetchIndianInfrastructurePois(location.latitude, location.longitude)
                 withContext(Dispatchers.Main) {
-                    pois = fetchedPois + wikiPois + quakePois + indianWikiPois + indianInfraPois
+                    pois = fetchedPois + wikiPois + quakePois
                 }
             }
         }
@@ -117,6 +110,24 @@ fun MapScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                },
+                actions = {
+                    if (isOnline && location != null) {
+                        TextButton(onClick = {
+                            val mapView = org.osmdroid.views.MapView(context)
+                            mapView.setTileSource(GoogleHybrid)
+                            val cacheManager = org.osmdroid.tileprovider.cachemanager.CacheManager(mapView)
+                            val bbox = org.osmdroid.util.BoundingBox(
+                                location.latitude + 0.05,
+                                location.longitude + 0.05,
+                                location.latitude - 0.05,
+                                location.longitude - 0.05
+                            )
+                            cacheManager.downloadAreaAsync(context, bbox, 10, 16)
+                        }) {
+                            Text("SAVE OFFLINE", color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -154,6 +165,7 @@ fun MapScreen(
                         centerLon = mapCenterLon,
                         targetPoi = targetPoi,
                         pois = pois,
+                        isOnline = isOnline,
                         onPoiClick = { poi ->
                             selectedPoi = poi
                         }
@@ -228,6 +240,7 @@ fun OsmMapView(
     centerLon: Double,
     pois: List<Poi>,
     targetPoi: Poi?,
+    isOnline: Boolean,
     onPoiClick: (Poi) -> Unit
 ) {
     val context = LocalContext.current
@@ -236,9 +249,15 @@ fun OsmMapView(
             setMultiTouchControls(true)
             setBuiltInZoomControls(true)
             setTileSource(GoogleHybrid)
+            setUseDataConnection(isOnline) // Crucial for aggressive offline caching
             controller.setZoom(16.0)
             controller.setCenter(GeoPoint(centerLat, centerLon))
         }
+    }
+    
+    // Update data connection if online status changes dynamically
+    LaunchedEffect(isOnline) {
+        mapView.setUseDataConnection(isOnline)
     }
 
     LaunchedEffect(targetPoi) {
@@ -325,9 +344,17 @@ private fun fetchNearbyPois(lat: Double, lon: Double): List<Poi> {
               node(around:2000, $lat, $lon)["historic"]["name"];
               node(around:2000, $lat, $lon)["shop"]["name"];
               node(around:2000, $lat, $lon)["leisure"]["name"];
-              way(around:2000, $lat, $lon)["amenity"]["name"];
-              way(around:2000, $lat, $lon)["tourism"]["name"];
-              way(around:2000, $lat, $lon)["historic"]["name"];
+              node(around:2500, $lat, $lon)["shop"="car_repair"];
+              node(around:2500, $lat, $lon)["shop"="tyres"];
+              node(around:2500, $lat, $lon)["shop"="car"];
+              node(around:2500, $lat, $lon)["service"="towing"];
+              way(around:2500, $lat, $lon)["amenity"]["name"];
+              way(around:2500, $lat, $lon)["tourism"]["name"];
+              way(around:2500, $lat, $lon)["historic"]["name"];
+              way(around:2500, $lat, $lon)["shop"="car_repair"];
+              way(around:2500, $lat, $lon)["shop"="tyres"];
+              way(around:2500, $lat, $lon)["shop"="car"];
+              way(around:2500, $lat, $lon)["service"="towing"];
             );
             out center;
         """.trimIndent()
@@ -361,13 +388,24 @@ private fun fetchNearbyPois(lat: Double, lon: Double): List<Poi> {
                     
                     val tags = element.optJSONObject("tags")
                     if (tags != null && !locLat.isNaN() && !locLon.isNaN()) {
-                        val name = tags.optString("name", "Unknown Name")
+                        var name = tags.optString("name", "")
                         var type = tags.optString("amenity", "")
                         if (type.isEmpty()) type = tags.optString("tourism", "")
                         if (type.isEmpty()) type = tags.optString("historic", "")
                         if (type.isEmpty()) type = tags.optString("shop", "")
+                        if (type.isEmpty()) type = tags.optString("service", "")
                         if (type.isEmpty()) type = tags.optString("leisure", "")
                         if (type.isEmpty()) type = tags.optString("emergency", "poi")
+                        
+                        if (name.isEmpty()) {
+                            name = when (type) {
+                                "tyres" -> "Puncture Shop"
+                                "car_repair" -> "Mechanic/Puncture Shop"
+                                "car" -> "Vehicle Showroom"
+                                "towing" -> "Towing Service"
+                                else -> "Unknown Name"
+                            }
+                        }
                         
                         pois.add(Poi(id, name, locLat, locLon, type))
                     }
@@ -450,88 +488,3 @@ private fun fetchEarthquakePois(lat: Double, lon: Double): List<Poi> {
     return pois
 }
 
-private fun fetchIndianWikidataPois(lat: Double, lon: Double): List<Poi> {
-    val pois = mutableListOf<Poi>()
-    try {
-        val query = """
-            SELECT ?itemLabel ?lat ?lon WHERE {
-              SERVICE wikibase:around { 
-                ?item wdt:P625 ?location . 
-                bd:serviceParam wikibase:center "Point($lon $lat)"^^geo:wktLiteral . 
-                bd:serviceParam wikibase:radius "20" . 
-              }
-              ?item wdt:P17 wd:Q668 .
-              ?item p:P625/psv:P625 ?coord_node .
-              ?coord_node wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lon .
-              SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
-            } LIMIT 20
-        """.trimIndent()
-        
-        val response = kotlinx.coroutines.runBlocking {
-            WikidataRetrofitClient.service.getServices(query = query)
-        }
-        val bindings = response.results?.bindings
-        
-        if (bindings != null) {
-            for (binding in bindings) {
-                val label = binding.itemLabel?.value ?: "Indian Location"
-                val itemLat = binding.lat?.value?.toDoubleOrNull()
-                val itemLon = binding.lon?.value?.toDoubleOrNull()
-                
-                if (itemLat != null && itemLon != null) {
-                    pois.add(Poi(label.hashCode().toLong(), label, itemLat, itemLon, "Indian Heritage/Place"))
-                }
-            }
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return pois
-}
-
-private fun fetchIndianInfrastructurePois(lat: Double, lon: Double): List<Poi> {
-    val pois = mutableListOf<Poi>()
-    try {
-        val query = """
-            [out:json][timeout:25];
-            (
-              node(around:20000, $lat, $lon)["network"~"Indian Railways",i];
-              node(around:20000, $lat, $lon)["brand"~"India Post",i];
-            );
-            out center;
-        """.trimIndent()
-        
-        val url = URL("https://overpass-api.de/api/interpreter?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
-        val connection = url.openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 15000
-        connection.readTimeout = 15000
-        
-        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val jsonObject = JSONObject(response)
-            val elements = jsonObject.optJSONArray("elements")
-            
-            if (elements != null) {
-                for (i in 0 until elements.length()) {
-                    val element = elements.getJSONObject(i)
-                    val id = element.optLong("id")
-                    
-                    var locLat = element.optDouble("lat", Double.NaN)
-                    var locLon = element.optDouble("lon", Double.NaN)
-                    
-                    val tags = element.optJSONObject("tags")
-                    if (tags != null && !locLat.isNaN() && !locLon.isNaN()) {
-                        val name = tags.optString("name", "Indian Infrastructure")
-                        val type = "Indian Govt Infra"
-                        
-                        pois.add(Poi(id, name, locLat, locLon, type))
-                    }
-                }
-            }
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return pois
-}

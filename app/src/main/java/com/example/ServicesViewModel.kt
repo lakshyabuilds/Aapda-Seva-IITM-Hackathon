@@ -45,7 +45,6 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
-                repository.clearOldCache()
                 val lat = location.latitude
                 val lon = location.longitude
                 
@@ -65,6 +64,12 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                     list.addAll(fetchNominatimServices("fire station", lat, lon, "Rescue Service"))
                     kotlinx.coroutines.delay(1200)
                     list.addAll(fetchNominatimServices("towing", lat, lon, "Towing Service"))
+                    kotlinx.coroutines.delay(1200)
+                    list.addAll(fetchNominatimServices("mechanic", lat, lon, "Puncture Shop"))
+                    kotlinx.coroutines.delay(1200)
+                    list.addAll(fetchNominatimServices("tyre repair", lat, lon, "Puncture Shop"))
+                    kotlinx.coroutines.delay(1200)
+                    list.addAll(fetchNominatimServices("car dealer", lat, lon, "Vehicle Showroom"))
                     list
                 }
                 
@@ -73,10 +78,34 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                 fetchedServices.addAll(wikidataJob.await())
                 fetchedServices.addAll(nominatimJob.await())
 
-                // Deduplicate by name and type to avoid clutter
-                val uniqueServices = fetchedServices.distinctBy { it.name.lowercase() + it.type }
+                // Spatial deduplication: Group POIs that refer to the same physical entity
+                val uniqueServices = mutableListOf<EmergencyServiceEntity>()
+                for (service in fetchedServices) {
+                    val isDuplicate = uniqueServices.any { existing ->
+                        val results = FloatArray(1)
+                        Location.distanceBetween(
+                            service.lat, service.lon,
+                            existing.lat, existing.lon,
+                            results
+                        )
+                        val distance = results[0]
+                        val sameType = service.type == existing.type
+                        val sameName = service.name.equals(existing.name, ignoreCase = true)
+                        
+                        // Same POI if they are the exact same type and < 150m apart,
+                        // OR if they share the same name and type and are < 2000m apart
+                        (sameType && distance < 150f) || (sameType && sameName && distance < 2000f)
+                    }
+                    if (!isDuplicate) {
+                        uniqueServices.add(service)
+                    }
+                }
                 
-                repository.insertServices(uniqueServices)
+                if (uniqueServices.isNotEmpty()) {
+                    // Important: only clear cache if we successfully retrieved new POIs
+                    repository.clearAllCache()
+                    repository.insertServices(uniqueServices)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -91,13 +120,18 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
             val query = """
                 [out:json][timeout:25];
                 (
-                  nwr(around:5000, $lat, $lon)["amenity"="hospital"];
-                  nwr(around:5000, $lat, $lon)["amenity"="police"];
-                  nwr(around:5000, $lat, $lon)["amenity"="fire_station"];
-                  nwr(around:5000, $lat, $lon)["emergency"="ambulance_station"];
-                  nwr(around:5000, $lat, $lon)["emergency"="water_rescue"];
-                  nwr(around:5000, $lat, $lon)["shop"="car_repair"]["service"="towing"];
-                  nwr(around:5000, $lat, $lon)["amenity"="clinic"];
+                  nwr(around:15000, $lat, $lon)["amenity"="hospital"];
+                  nwr(around:15000, $lat, $lon)["amenity"="clinic"];
+                  nwr(around:15000, $lat, $lon)["amenity"="doctors"];
+                  nwr(around:15000, $lat, $lon)["amenity"="pharmacy"];
+                  nwr(around:15000, $lat, $lon)["amenity"="police"];
+                  nwr(around:15000, $lat, $lon)["amenity"="fire_station"];
+                  nwr(around:15000, $lat, $lon)["emergency"="ambulance_station"];
+                  nwr(around:15000, $lat, $lon)["emergency"="water_rescue"];
+                  nwr(around:15000, $lat, $lon)["shop"="car_repair"];
+                  nwr(around:15000, $lat, $lon)["shop"="tyres"];
+                  nwr(around:15000, $lat, $lon)["shop"="car"];
+                  nwr(around:15000, $lat, $lon)["shop"="motorcycle"];
                 );
                 out center;
             """.trimIndent()
@@ -131,12 +165,15 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                         val amenity = tags.optString("amenity")
                         val emergency = tags.optString("emergency")
                         val towing = tags.optString("service")
+                        val shop = tags.optString("shop")
                         
                         val type = when {
-                            amenity == "hospital" || amenity == "clinic" -> "Hospital"
+                            amenity == "hospital" || amenity == "clinic" || amenity == "doctors" || amenity == "pharmacy" -> "Hospital"
                             amenity == "police" -> "Police Station"
                             amenity == "fire_station" || emergency == "water_rescue" || emergency == "ambulance_station" -> "Rescue Service"
                             towing == "towing" -> "Towing Service"
+                            shop == "tyres" || shop == "car_repair" -> "Puncture Shop"
+                            shop == "car" || shop == "motorcycle" -> "Vehicle Showroom"
                             else -> "Other"
                         }
                         

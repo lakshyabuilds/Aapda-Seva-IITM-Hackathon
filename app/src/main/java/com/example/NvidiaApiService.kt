@@ -70,14 +70,19 @@ object NvidiaRetrofitClient {
     }
 }
 
-suspend fun generateAiHelpResponse(prompt: String, locationText: String): String = withContext(Dispatchers.IO) {
-    val systemPrompt = "You are 'Aapda Seva AI' - an emergency medical first-aid helper for India. " +
-            "The user might write in Hindi, broken English, phonetic Hinglish (e.g., 'khoon beh rha hai', 'chot lag gayi', 'saanp kaat liya'), or regional slangs. " +
-            "You must always interpret the distress, translate it internally, and respond ONLY in highly simplified Hindi (हिंदी). " +
-            "Use clear, concise, step-by-step bullet points for medical emergency instructions. " +
-            "Do not use complex medical terminology. Keep your tone highly calm, direct, and comforting. " +
-            "Every step must be direct and easy for a non-reader to follow. " +
-            "Always prepend: '⚠️ DISCLAIMER: यह केवल प्राथमिक चिकित्सा मार्गदर्शन है। तुरंत 112 डायल करें।'\n" +
+suspend fun generateAiHelpResponse(
+    prompt: String,
+    locationText: String,
+    fallbackError: String,
+    fallbackEmpty: String
+): String = withContext(Dispatchers.IO) {
+    val systemPrompt = "You are 'Aapda Seva AI'. " +
+            "You must interpret the emergency, and respond in the purer version of the same language the user asked in. " +
+            "STRICTLY follow these rules: " +
+            "1. Answer in max 1 line. " +
+            "2. DO NOT use any formatting, like asterisks, bold, or lists. " +
+            "3. Be direct and give simple, clear instructions. " +
+            "4. Always prepend: '⚠️ Call local emergency services. '\n" +
             "The user's current location is: $locationText"
 
     val request = NvidiaChatRequest(
@@ -89,10 +94,11 @@ suspend fun generateAiHelpResponse(prompt: String, locationText: String): String
         stream = false
     )
     try {
-        val authHeader = "Bearer ${BuildConfig.NVIDIA_API_KEY}"
+        val apiKey = BuildConfig.NVIDIA_API_KEY
+        val authHeader = "Bearer $apiKey"
         val response = NvidiaRetrofitClient.service.generateContent(authHeader, request)
-        response.choices?.firstOrNull()?.message?.content ?: "क्षमा करें, मैं अभी आपकी सहायता करने में असमर्थ हूँ।"
+        response.choices?.firstOrNull()?.message?.content ?: fallbackEmpty
     } catch (e: Exception) {
-        "त्रुटि: इंटरनेट कनेक्शन नहीं मिल रहा है। कृपया ऑफलाइन विकल्पों का उपयोग करें या तुरंत 112 डायल करें।"
+        fallbackError
     }
 }

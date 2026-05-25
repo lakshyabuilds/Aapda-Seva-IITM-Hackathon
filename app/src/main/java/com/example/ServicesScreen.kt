@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,8 +32,9 @@ fun ServicesScreen(
     val services by viewModel.services.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val currentFilter by viewModel.currentFilter.collectAsStateWithLifecycle()
+    val isOnline by rememberIsNetworkAvailable()
 
-    val filters = listOf("All", "Hospital", "Police Station", "Rescue Service", "Towing Service")
+    val filters = listOf("All", "Hospital", "Police Station", "Rescue Service", "Towing Service", "Puncture Shop", "Vehicle Showroom")
 
     LaunchedEffect(location) {
         if (location != null) {
@@ -58,13 +60,15 @@ fun ServicesScreen(
                 .padding(innerPadding)
         ) {
             // Filters
-            LazyRow(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filters) { filter ->
+                filters.forEach { filter ->
                     FilterChip(
                         selected = currentFilter == filter,
                         onClick = { viewModel.setFilter(filter) },
@@ -74,6 +78,27 @@ fun ServicesScreen(
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     )
+                }
+            }
+            
+            if (!isOnline) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = "Offline", tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Offline Mode - Showing Cached Results",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
             

@@ -13,6 +13,10 @@ class EmergencyServiceRepository(private val dao: EmergencyServiceDao) {
         dao.insertServices(services)
     }
 
+    suspend fun clearAllCache() {
+        dao.deleteAllServices()
+    }
+
     suspend fun clearOldCache() {
         val expirationTime = System.currentTimeMillis() - (24 * 60 * 60 * 1000) // 1 day
         dao.deleteOldServices(expirationTime)

@@ -21,7 +21,16 @@ class SOSAppScreenshotTest {
 
   @Test
   fun greeting_screenshot() {
-    composeTestRule.setContent { MyApplicationTheme { SOSAppContent() } }
+    composeTestRule.setContent { 
+        MyApplicationTheme { 
+            SOSAppContent(
+                sharedLocation = null,
+                onLocationUpdate = {},
+                onOpenMap = {},
+                onSosClick = {}
+            ) 
+        } 
+    }
 
     composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/sos_app.png")
   }

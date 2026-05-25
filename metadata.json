@@ -1,6 +1,6 @@
 {
   "name": "Aapda Seva",
-  "description": "SOS application providing location coordinates and translated generic landmark.",
+  "description": "Emergency first-aid and SOS application by Lakshya Gupta (Techiral & Lakshya Builds) for the IIT Madras Hackathon.",
   "requestFramePermissions": [
     "geolocation"
   ],

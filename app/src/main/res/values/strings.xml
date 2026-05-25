@@ -6,8 +6,8 @@
     <string name="nav_services">Services</string>
     <string name="nav_ai_help">AI Help</string>
     
-    <string name="title_aapda_seva">AAPDA SEVA\nआपदा सेवा</string>
-    <string name="sos_button">SOS\nआपातकाल</string>
+    <string name="title_aapda_seva">AAPDA SEVA</string>
+    <string name="sos_button">SOS</string>
     <string name="fetching_location">Fetching location...</string>
     <string name="no_landmark_found">No landmark found</string>
     <string name="landmark_not_available">Landmark not available</string>
@@ -18,4 +18,20 @@
     <string name="permissions_required_title">Permissions Required</string>
     <string name="agree">Agree</string>
     <string name="cancel">Cancel</string>
+    <string name="bg_permission_required_title">Background Location</string>
+    <string name="bg_permission_rationale">To enable shake-and-fall detection to fetch coordinates while the app is closed, please select "Allow all the time" in the App Settings.</string>
+    <string name="settings">Settings</string>
+
+    <string name="ai_fallback_error">Error: Internet connection not found. Please use offline options or dial 112 immediately.</string>
+    <string name="ai_fallback_empty">Sorry, I am unable to assist you right now.</string>
+    <string name="guide_bleeding_title">Bleeding</string>
+    <string name="guide_bleeding_desc">Apply firm, direct pressure over the wound with a clean cloth. Keep pressing until bleeding stops.</string>
+    <string name="guide_choking_title">Choking</string>
+    <string name="guide_choking_desc">Stand behind them. Give 5 back blows between shoulder blades. If still choking, give 5 abdominal thrusts (Heimlich maneuver).</string>
+    <string name="guide_burn_title">Burn</string>
+    <string name="guide_burn_desc">Run cool (not cold) water over the burn for 10-20 minutes. Do not pop blisters. Cover with a clean, dry, non-fluffy cloth.</string>
+    <string name="guide_fracture_title">Fracture</string>
+    <string name="guide_fracture_desc">Do not try to realign the bone. Immobilize the injured area and apply a cold pack wrapped in cloth to reduce swelling.</string>
+    <string name="guide_heart_attack_title">Heart Attack</string>
+    <string name="guide_heart_attack_desc">Call emergency services immediately. Have the person sit, rest, and keep calm. If they have prescribed nitroglycerin, help them take it.</string>
 </resources>

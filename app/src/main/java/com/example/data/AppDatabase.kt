@@ -7,11 +7,12 @@ import androidx.room.RoomDatabase
 import com.example.Contact
 import com.example.ContactDao
 
-@Database(entities = [EmergencyServiceEntity::class, Contact::class, UserProfileEntity::class], version = 2, exportSchema = false)
+@Database(entities = [EmergencyServiceEntity::class, Contact::class, UserProfileEntity::class, IncidentBackupEntity::class], version = 3, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun emergencyServiceDao(): EmergencyServiceDao
     abstract fun contactDao(): ContactDao
     abstract fun userProfileDao(): UserProfileDao
+    abstract fun incidentBackupDao(): IncidentBackupDao
 
     companion object {
         @Volatile

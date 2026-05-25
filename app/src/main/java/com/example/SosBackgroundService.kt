@@ -17,7 +17,17 @@ import android.hardware.SensorManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.Vibrator
+import android.os.VibrationEffect
 import androidx.core.app.NotificationCompat
+import android.location.Location
+import android.os.Looper
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 
 class SosBackgroundService : Service(), SensorEventListener {
 
@@ -25,17 +35,66 @@ class SosBackgroundService : Service(), SensorEventListener {
         const val CHANNEL_ID = "SosBackgroundServiceChannel"
         const val NOTIFICATION_ID = 1
         const val ACTION_SOS = "com.example.ACTION_SOS"
-        private const val SHAKE_THRESHOLD = 12f
+        private const val SHAKE_THRESHOLD = 12f // Lowered to 12f so a 2-second shake is easily maintained
     }
 
     private lateinit var sensorManager: SensorManager
+    private lateinit var powerManager: PowerManager
+    private var wakeLock: PowerManager.WakeLock? = null
     private var accelerometer: Sensor? = null
+    private var vibrator: Vibrator? = null
+
+    // Location
+    private var lastKnownLocation: Location? = null
+
+    private fun handleNewLocation(location: Location) {
+        val currentBest = lastKnownLocation
+        if (currentBest == null) {
+            lastKnownLocation = location
+            return
+        }
+
+        val timeDelta = location.time - currentBest.time
+        val isSignificantlyNewer = timeDelta > 60000
+        val isSignificantlyOlder = timeDelta < -60000
+        val isNewer = timeDelta > 0
+
+        if (isSignificantlyNewer) {
+            lastKnownLocation = location
+        } else if (!isSignificantlyOlder) {
+            val accuracyDelta = (location.accuracy - currentBest.accuracy).toInt()
+            val isLessAccurate = accuracyDelta > 0
+            val isMoreAccurate = accuracyDelta < 0
+            val isSignificantlyLessAccurate = accuracyDelta > 200
+
+            if (isMoreAccurate) {
+                lastKnownLocation = location
+            } else if (isNewer && !isLessAccurate) {
+                lastKnownLocation = location
+            } else if (isNewer && !isSignificantlyLessAccurate && location.provider == currentBest.provider) {
+                lastKnownLocation = location
+            }
+        }
+    }
+
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(p0: LocationResult) {
+            for (location in p0.locations) {
+                handleNewLocation(location)
+            }
+        }
+    }
 
     // Shake tracking
     private var mAccel = 0f
     private var mAccelCurrent = SensorManager.GRAVITY_EARTH
     private var mAccelLast = SensorManager.GRAVITY_EARTH
-    private var lastShakeTime = 0L
+
+    private var isShaking = false
+    private var shakeStartTime = 0L
+    private var lastShakeEventTime = 0L
+    private val SHAKE_DURATION_REQUIRED = 2000L // Needs to shake for at least 2 seconds
+    private val SHAKE_STOP_TIMEOUT = 1500L // Must stop for 1.5 seconds to trigger
 
     // Fall tracking
     private var lastFreeFallTime = 0L
@@ -49,6 +108,11 @@ class SosBackgroundService : Service(), SensorEventListener {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
                 val currentTime = System.currentTimeMillis()
+                // Debounce rapid duplicate broadcasts from a single physical click (commonly < 200ms)
+                if (currentTime - lastVolumeClickTime < 300) {
+                    return
+                }
+                
                 if (currentTime - lastVolumeClickTime > 3000) {
                     volumeClickCount = 0
                 }
@@ -69,9 +133,8 @@ class SosBackgroundService : Service(), SensorEventListener {
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-        }
+        
+        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
         val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
         androidx.core.content.ContextCompat.registerReceiver(
@@ -82,9 +145,60 @@ class SosBackgroundService : Service(), SensorEventListener {
         )
     }
 
+    private var isTrackingStarted = false
+
+    private fun startTracking() {
+        if (isTrackingStarted) return
+        isTrackingStarted = true
+
+        accelerometer?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        }
+
+        powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "sosapp:background_wake_lock")
+        try {
+            wakeLock?.acquire(10 * 60 * 1000L /*10 minutes*/)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        try {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+                val locationRequest = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 15000)
+                    .setMinUpdateIntervalMillis(10000)
+                    .setMaxUpdateDelayMillis(30000)
+                    .build()
+                @Suppress("MissingPermission")
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
+        try {
+            wakeLock?.let {
+                 if (it.isHeld) it.release()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         try {
             unregisterReceiver(volumeReceiver)
         } catch (e: Exception) {
@@ -100,20 +214,89 @@ class SosBackgroundService : Service(), SensorEventListener {
         val notification = createNotification()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            try {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } catch (e: Exception) {
+                try {
+                    startForeground(NOTIFICATION_ID, notification)
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
+                    stopSelf()
+                }
+            }
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            try {
+                startForeground(NOTIFICATION_ID, notification)
+            } catch (e: Exception) {
+                stopSelf()
+            }
         }
+
+        startTracking()
 
         return START_STICKY
     }
 
+    @Suppress("MissingPermission")
     private fun triggerSosFromBackground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(500)
+        }
+        
         val mainIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("TRIGGER_SOS", true)
+            lastKnownLocation?.let { loc ->
+                putExtra("LAST_LAT", loc.latitude)
+                putExtra("LAST_LON", loc.longitude)
+            }
         }
-        startActivity(mainIntent)
+        
+        try {
+            startActivity(mainIntent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Also use full screen intent notification to bypass Android 10+ background launch restrictions
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            this,
+            123,
+            mainIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        createHighPriorityNotificationChannel()
+
+        val notificationBuilder = NotificationCompat.Builder(this, "high_priority_sos")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("SOS Triggered")
+            .setContentText("Emergency countdown started!")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setAutoCancel(true)
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(2, notificationBuilder.build())
+    }
+
+    private fun createHighPriorityNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "high_priority_sos",
+                "High Priority SOS",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Used to show SOS trigger immediately"
+                setBypassDnd(true)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -141,9 +324,23 @@ class SosBackgroundService : Service(), SensorEventListener {
 
             val now = System.currentTimeMillis()
             if (mAccel > SHAKE_THRESHOLD) {
-                if (now - lastShakeTime > 10000) {
-                    lastShakeTime = now
-                    triggerSosFromBackground()
+                if (!isShaking) {
+                    isShaking = true
+                    shakeStartTime = now
+                }
+                lastShakeEventTime = now
+            } else {
+                if (isShaking) {
+                    val timeSinceLastShake = now - lastShakeEventTime
+                    if (timeSinceLastShake > SHAKE_STOP_TIMEOUT) {
+                        val shakeDuration = lastShakeEventTime - shakeStartTime
+                        if (shakeDuration > SHAKE_DURATION_REQUIRED) {
+                            // Shook for at least 2 seconds, and now stopped!
+                            triggerSosFromBackground()
+                        }
+                        // Reset
+                        isShaking = false
+                    }
                 }
             }
 

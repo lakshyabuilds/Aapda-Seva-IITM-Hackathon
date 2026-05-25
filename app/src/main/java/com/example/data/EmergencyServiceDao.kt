@@ -17,6 +17,9 @@ interface EmergencyServiceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertServices(services: List<EmergencyServiceEntity>)
 
+    @Query("DELETE FROM emergency_services")
+    suspend fun deleteAllServices()
+
     @Query("DELETE FROM emergency_services WHERE timestamp < :expirationTime")
     suspend fun deleteOldServices(expirationTime: Long)
 }
