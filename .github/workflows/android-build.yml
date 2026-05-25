@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build & Upload APK
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -23,7 +25,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1' # Required for this project's AGP version
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
@@ -45,8 +47,8 @@ jobs:
           fi
 
       - name: Build Debug APK
-        # We run the build with --no-daemon to ensure a clean build environment on the CI runner
-        run: gradle assembleDebug --stacktrace --no-daemon
+        # We run the build with standard daemon to ensure KSP (Kotlin Symbol Processing) executes correctly
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
