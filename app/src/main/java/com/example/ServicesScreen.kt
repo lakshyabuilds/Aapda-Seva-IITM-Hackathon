@@ -32,11 +32,17 @@ fun ServicesScreen(
     val services by viewModel.services.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val currentFilter by viewModel.currentFilter.collectAsStateWithLifecycle()
+    val selectedRadius by viewModel.selectedRadius.collectAsStateWithLifecycle()
     val isOnline by rememberIsNetworkAvailable()
 
-    val filters = listOf("All", "Hospital", "Police Station", "Rescue Service", "Towing Service", "Puncture Shop", "Vehicle Showroom")
+    val filters = listOf("All", "Hospital", "Police Station", "Rescue Service", "Towing Service", "Puncture Shop", "Fuel/Mechanic", "Vehicle Showroom")
+    val radiuses = listOf(5000 to "5 km", 15000 to "15 km", 30000 to "30 km", 50000 to "50 km")
 
-    LaunchedEffect(location) {
+    var expandedRadiusMenu by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(location, selectedRadius) {
         if (location != null) {
             viewModel.fetchNearbyServices(location)
         }
@@ -51,6 +57,17 @@ fun ServicesScreen(
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { 
+                    android.widget.Toast.makeText(context, "Opening report form...", android.widget.Toast.LENGTH_SHORT).show() 
+                },
+                icon = { Icon(Icons.Default.Info, contentDescription = "Report") },
+                text = { Text("Report missing hospital") },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     ) { innerPadding ->
         Column(
@@ -59,6 +76,40 @@ fun ServicesScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(innerPadding)
         ) {
+            // Radius Selection
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Search Radius:",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Box {
+                    OutlinedButton(onClick = { expandedRadiusMenu = true }) {
+                        Text(radiuses.find { it.first == selectedRadius }?.second ?: "Unknown")
+                    }
+                    DropdownMenu(
+                        expanded = expandedRadiusMenu,
+                        onDismissRequest = { expandedRadiusMenu = false }
+                    ) {
+                        radiuses.forEach { (r, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { 
+                                    viewModel.setRadius(r)
+                                    expandedRadiusMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             // Filters
             @OptIn(ExperimentalLayoutApi::class)
             FlowRow(
@@ -102,13 +153,98 @@ fun ServicesScreen(
                 }
             }
             
-            if (isLoading && services.isEmpty()) {
+            if (location == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Waiting for location...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else if (isLoading && services.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             } else if (services.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No services found in this area", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                        Text("No services found in this area", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (currentFilter == "Puncture Shop") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Tip: Try looking for 'Fuel/Mechanic' instead. Petrol pumps frequently have puncture repair shops nearby, even if not mapped strictly as a mechanic.",
+                                color = MaterialTheme.colorScheme.secondary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedCard(
+                            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    "Cannot find what you need?",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Please use general helplines for immediate assistance.",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = { 
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
+                                                data = android.net.Uri.parse("tel:112")
+                                            }
+                                            context.startActivity(intent)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
+                                    ) {
+                                        Icon(Icons.Default.Call, contentDescription = "Call 112", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("112")
+                                    }
+                                    Button(
+                                        onClick = { 
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
+                                                data = android.net.Uri.parse("tel:1033")
+                                            }
+                                            context.startActivity(intent)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
+                                    ) {
+                                        Icon(Icons.Default.Call, contentDescription = "Call 1033", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("1033")
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { 
+                            if (location != null) {
+                                viewModel.fetchNearbyServices(location) 
+                            }
+                        }) {
+                            Text("Retry Search")
+                        }
+                    }
                 }
             } else {
                 LazyColumn(

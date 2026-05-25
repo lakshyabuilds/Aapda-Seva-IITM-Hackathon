@@ -6,7 +6,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.preference.PreferenceManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -247,7 +248,6 @@ fun OsmMapView(
     val mapView = remember {
         MapView(context).apply {
             setMultiTouchControls(true)
-            setBuiltInZoomControls(true)
             setTileSource(GoogleHybrid)
             setUseDataConnection(isOnline) // Crucial for aggressive offline caching
             controller.setZoom(16.0)
@@ -332,82 +332,54 @@ fun OsmMapView(
 
 data class Poi(val id: Long, val name: String, val lat: Double, val lon: Double, val type: String)
 
-private fun fetchNearbyPois(lat: Double, lon: Double): List<Poi> {
+private suspend fun fetchNearbyPois(lat: Double, lon: Double): List<Poi> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
     val pois = mutableListOf<Poi>()
+    val client = okhttp3.OkHttpClient()
+    
     try {
         val query = """
             [out:json][timeout:25];
             (
-              node(around:2000, $lat, $lon)["amenity"]["name"];
-              node(around:2000, $lat, $lon)["emergency"]["name"];
-              node(around:2000, $lat, $lon)["tourism"]["name"];
-              node(around:2000, $lat, $lon)["historic"]["name"];
-              node(around:2000, $lat, $lon)["shop"]["name"];
-              node(around:2000, $lat, $lon)["leisure"]["name"];
-              node(around:2500, $lat, $lon)["shop"="car_repair"];
-              node(around:2500, $lat, $lon)["shop"="tyres"];
-              node(around:2500, $lat, $lon)["shop"="car"];
-              node(around:2500, $lat, $lon)["service"="towing"];
-              way(around:2500, $lat, $lon)["amenity"]["name"];
-              way(around:2500, $lat, $lon)["tourism"]["name"];
-              way(around:2500, $lat, $lon)["historic"]["name"];
-              way(around:2500, $lat, $lon)["shop"="car_repair"];
-              way(around:2500, $lat, $lon)["shop"="tyres"];
-              way(around:2500, $lat, $lon)["shop"="car"];
-              way(around:2500, $lat, $lon)["service"="towing"];
+              node["amenity"="hospital"](around:5000, $lat, $lon);
+              node["amenity"="clinic"](around:5000, $lat, $lon);
+              node["amenity"="police"](around:5000, $lat, $lon);
+              node["amenity"="fire_station"](around:5000, $lat, $lon);
             );
-            out center;
+            out body;
         """.trimIndent()
         
-        val url = URL("https://overpass-api.de/api/interpreter?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
-        val connection = url.openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 15000
-        connection.readTimeout = 15000
+        val mediaType = "application/x-www-form-urlencoded".toMediaType()
+        val requestBody = "data=$query".toRequestBody(mediaType)
         
-        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val jsonObject = JSONObject(response)
-            val elements = jsonObject.optJSONArray("elements")
+        val request = okhttp3.Request.Builder()
+            .url("https://overpass-api.de/api/interpreter")
+            .post(requestBody)
+            .build()
             
-            if (elements != null) {
-                for (i in 0 until elements.length()) {
-                    val element = elements.getJSONObject(i)
-                    val id = element.optLong("id")
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) {
+                val responseData = response.body?.string()
+                if (responseData != null) {
+                    val jsonObject = org.json.JSONObject(responseData)
+                    val elements = jsonObject.optJSONArray("elements")
                     
-                    var locLat = element.optDouble("lat", Double.NaN)
-                    var locLon = element.optDouble("lon", Double.NaN)
-                    
-                    if (locLat.isNaN() || locLon.isNaN()) {
-                        val center = element.optJSONObject("center")
-                        if (center != null) {
-                            locLat = center.optDouble("lat", Double.NaN)
-                            locLon = center.optDouble("lon", Double.NaN)
-                        }
-                    }
-                    
-                    val tags = element.optJSONObject("tags")
-                    if (tags != null && !locLat.isNaN() && !locLon.isNaN()) {
-                        var name = tags.optString("name", "")
-                        var type = tags.optString("amenity", "")
-                        if (type.isEmpty()) type = tags.optString("tourism", "")
-                        if (type.isEmpty()) type = tags.optString("historic", "")
-                        if (type.isEmpty()) type = tags.optString("shop", "")
-                        if (type.isEmpty()) type = tags.optString("service", "")
-                        if (type.isEmpty()) type = tags.optString("leisure", "")
-                        if (type.isEmpty()) type = tags.optString("emergency", "poi")
-                        
-                        if (name.isEmpty()) {
-                            name = when (type) {
-                                "tyres" -> "Puncture Shop"
-                                "car_repair" -> "Mechanic/Puncture Shop"
-                                "car" -> "Vehicle Showroom"
-                                "towing" -> "Towing Service"
-                                else -> "Unknown Name"
+                    if (elements != null) {
+                        for (i in 0 until elements.length()) {
+                            val element = elements.getJSONObject(i)
+                            val id = element.optLong("id")
+                            
+                            val locLat = element.optDouble("lat", Double.NaN)
+                            val locLon = element.optDouble("lon", Double.NaN)
+                            
+                            val tags = element.optJSONObject("tags")
+                            if (tags != null && !locLat.isNaN() && !locLon.isNaN()) {
+                                val name = tags.optString("name", "Unknown Service")
+                                var type = tags.optString("amenity", "")
+                                if (type.isEmpty()) type = "emergency"
+                                
+                                pois.add(Poi(id, name, locLat, locLon, type))
                             }
                         }
-                        
-                        pois.add(Poi(id, name, locLat, locLon, type))
                     }
                 }
             }
@@ -415,7 +387,7 @@ private fun fetchNearbyPois(lat: Double, lon: Double): List<Poi> {
     } catch (e: Exception) {
         e.printStackTrace()
     }
-    return pois
+    return@withContext pois
 }
 
 private fun fetchWikipediaPois(lat: Double, lon: Double): List<Poi> {

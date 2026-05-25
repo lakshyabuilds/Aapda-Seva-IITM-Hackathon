@@ -78,124 +78,124 @@ fun SosConfirmScreen(
         level * 100 / scale.toFloat()
     }
 
-    LaunchedEffect(state) {
-        when (state) {
-            SosConfirmState.COUNTDOWN_INITIAL -> {
-                audioDeferred = async(Dispatchers.IO) { StealthMediaCapture.captureAudio(context, 3000) }
-                photoDeferred = async(Dispatchers.Main) { StealthMediaCapture.capturePhoto(context) }
-                
-                for (i in 3 downTo 1) {
-                    initialCountdown = i
-                    delay(1000)
-                }
-                state = SosConfirmState.SENDING_SILENT
+    LaunchedEffect(Unit) {
+        val audioDeferred = async(Dispatchers.IO) { StealthMediaCapture.captureAudio(context, 3000) }
+        val photoDeferred = async(Dispatchers.Main) { StealthMediaCapture.capturePhoto(context) }
+        
+        for (i in 3 downTo 1) {
+            initialCountdown = i
+            delay(1000)
+        }
+        state = SosConfirmState.SENDING_SILENT
+        
+        try {
+            val userProfileEntity = withContext(Dispatchers.IO) {
+                AppDatabase.getDatabase(context).userProfileDao().getUserProfile()
             }
-            SosConfirmState.SENDING_SILENT -> {
-                try {
-                    val userProfileEntity = withContext(Dispatchers.IO) {
-                        AppDatabase.getDatabase(context).userProfileDao().getUserProfile()
-                    }
-                    val medicalProfile = if (userProfileEntity != null) {
-                        MedicalProfile(
-                            name = userProfileEntity.name.takeIf { it.isNotBlank() } ?: "Unknown User",
-                            age = userProfileEntity.age,
-                            bloodGroup = userProfileEntity.bloodGroup.takeIf { it.isNotBlank() } ?: "Unknown",
-                            allergies = userProfileEntity.allergies.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                            notes = userProfileEntity.notes.takeIf { it.isNotBlank() } ?: "No notes"
-                        )
-                    } else {
-                        MedicalProfile(
-                            name = "Unknown User",
-                            age = 0,
-                            bloodGroup = "Unknown",
-                            allergies = emptyList(),
-                            notes = "No medical profile set"
-                        )
-                    }
+            val medicalProfile = if (userProfileEntity != null) {
+                MedicalProfile(
+                    name = userProfileEntity.name.takeIf { it.isNotBlank() } ?: "Unknown User",
+                    age = userProfileEntity.age,
+                    bloodGroup = userProfileEntity.bloodGroup.takeIf { it.isNotBlank() } ?: "Unknown",
+                    allergies = userProfileEntity.allergies.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                    notes = userProfileEntity.notes.takeIf { it.isNotBlank() } ?: "No notes"
+                )
+            } else {
+                MedicalProfile(
+                    name = "Unknown User",
+                    age = 0,
+                    bloodGroup = "Unknown",
+                    allergies = emptyList(),
+                    notes = "No medical profile set"
+                )
+            }
 
-                    val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                    val isLowPowerMode = powerManager.isPowerSaveMode
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val isLowPowerMode = powerManager.isPowerSaveMode
 
-                    val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                    val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                    val batteryLevel = if (level >= 0 && scale > 0) level.toFloat() / scale.toFloat() else 0.5f
-                    
-                    val statusInt = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-                    val isCharging = statusInt == BatteryManager.BATTERY_STATUS_CHARGING || statusInt == BatteryManager.BATTERY_STATUS_FULL
-                    val statusText = if (isCharging) "charging" else "discharging"
-                    
-                    val deviceInfo = mapOf(
-                        "os" to "Android",
-                        "osVersion" to Build.VERSION.RELEASE,
-                        "sdkVersion" to Build.VERSION.SDK_INT.toString(),
-                        "model" to Build.MODEL,
-                        "manufacturer" to Build.MANUFACTURER,
-                        "brand" to Build.BRAND,
-                        "device" to Build.DEVICE
-                    )
+            val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val batteryLevel = if (level >= 0 && scale > 0) level.toFloat() / scale.toFloat() else 0.5f
+            
+            val statusInt = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isCharging = statusInt == BatteryManager.BATTERY_STATUS_CHARGING || statusInt == BatteryManager.BATTERY_STATUS_FULL
+            val statusText = if (isCharging) "charging" else "discharging"
+            
+            val deviceInfo = mapOf(
+                "os" to "Android",
+                "osVersion" to Build.VERSION.RELEASE,
+                "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                "model" to Build.MODEL,
+                "manufacturer" to Build.MANUFACTURER,
+                "brand" to Build.BRAND,
+                "device" to Build.DEVICE
+            )
 
-                    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-                    val networkCapabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
-                    val isWifi = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
-                    val isCellular = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
-                    
-                    var ipAddress = "Unknown"
-                    try {
-                        val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-                        while (interfaces.hasMoreElements()) {
-                            val networkInterface = interfaces.nextElement()
-                            val addresses = networkInterface.inetAddresses
-                            while (addresses.hasMoreElements()) {
-                                val address = addresses.nextElement()
-                                if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
-                                    ipAddress = address.hostAddress ?: "Unknown"
-                                }
-                            }
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val networkCapabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+            val isWifi = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+            val isCellular = networkCapabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+            
+            var ipAddress = "Unknown"
+            try {
+                val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                while (interfaces.hasMoreElements()) {
+                    val networkInterface = interfaces.nextElement()
+                    val addresses = networkInterface.inetAddresses
+                    while (addresses.hasMoreElements()) {
+                        val address = addresses.nextElement()
+                        if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                            ipAddress = address.hostAddress ?: "Unknown"
                         }
-                    } catch (e: Exception) {}
+                    }
+                }
+            } catch (e: Exception) {}
 
-                    val networkInfo = mutableMapOf<String, String>()
-                    if (isWifi) networkInfo["type"] = "wifi"
-                    else if (isCellular) networkInfo["type"] = "cellular"
-                    else networkInfo["type"] = "offline"
-                    networkInfo["ipAddress"] = ipAddress
+            val networkInfo = mutableMapOf<String, String>()
+            if (isWifi) networkInfo["type"] = "wifi"
+            else if (isCellular) networkInfo["type"] = "cellular"
+            else networkInfo["type"] = "offline"
+            networkInfo["ipAddress"] = ipAddress
 
-                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
-                    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                    val isoDate = sdf.format(java.util.Date())
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            val isoDate = sdf.format(java.util.Date())
 
-                    val audioData = audioDeferred?.await()
-                    val photoData = photoDeferred?.await()
+            val audioData = audioDeferred.await()
+            val photoData = photoDeferred.await()
 
-                    val payload = SosPayload(
-                        id = java.util.UUID.randomUUID().toString(),
-                        incidentId = java.util.UUID.randomUUID().toString(),
-                        userId = userProfileEntity?.name?.takeIf { it.isNotBlank() } ?: "UnknownUser",
-                        type = "QUICK_DISPATCH",
-                        timestamp = isoDate,
-                        source = "Android App",
-                        isTelemetry = true,
-                        stealthMode = true,
-                        latitude = location?.latitude ?: 0.0,
-                        longitude = location?.longitude ?: 0.0,
-                        locationInfo = LocationInfo(
-                            speed = location?.speed,
-                            heading = location?.bearing,
-                            altitude = location?.altitude,
-                            accuracy = location?.accuracy
-                        ),
-                        battery = BatteryInfo(
-                            level = batteryLevel,
-                            status = statusText,
-                            lowPowerMode = isLowPowerMode
-                        ),
-                        device = deviceInfo,
-                        network = networkInfo,
-                        photo = if (photoData != null) listOf(photoData) else emptyList(),
-                        audio = if (audioData != null) listOf(audioData) else emptyList(),
-                        medicalProfile = medicalProfile
-                    )
-                    
+            val payload = SosPayload(
+                id = java.util.UUID.randomUUID().toString(),
+                incidentId = java.util.UUID.randomUUID().toString(),
+                userId = userProfileEntity?.name?.takeIf { it.isNotBlank() } ?: "UnknownUser",
+                type = "QUICK_DISPATCH",
+                timestamp = isoDate,
+                source = "Android App",
+                isTelemetry = true,
+                stealthMode = true,
+                latitude = location?.latitude ?: 0.0,
+                longitude = location?.longitude ?: 0.0,
+                locationInfo = LocationInfo(
+                    speed = location?.speed,
+                    heading = location?.bearing,
+                    altitude = location?.altitude,
+                    accuracy = location?.accuracy
+                ),
+                battery = BatteryInfo(
+                    level = batteryLevel,
+                    status = statusText,
+                    lowPowerMode = isLowPowerMode
+                ),
+                device = deviceInfo,
+                network = networkInfo,
+                photo = if (photoData != null) listOf(photoData) else emptyList(),
+                audio = if (audioData != null) listOf(audioData) else emptyList(),
+                medicalProfile = medicalProfile
+            )
+            
+            try {
+                // Dispatch payload in a detached CoroutineScope so it completes even if the UI moves away
+                kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
                     try {
                         val payloadJson = kotlinx.serialization.json.Json.encodeToString(SosPayload.serializer(), payload)
                         val backupEntity = com.example.data.IncidentBackupEntity(
@@ -203,9 +203,8 @@ fun SosConfirmScreen(
                             timestamp = payload.timestamp,
                             payloadJson = payloadJson
                         )
-                        withContext(Dispatchers.IO) {
-                            AppDatabase.getDatabase(context).incidentBackupDao().insertBackup(backupEntity)
-                        }
+                        AppDatabase.getDatabase(context).incidentBackupDao().insertBackup(backupEntity)
+                        
                         val constraints = Constraints.Builder()
                             .setRequiredNetworkType(NetworkType.CONNECTED)
                             .build()
@@ -217,111 +216,78 @@ fun SosConfirmScreen(
                             ExistingWorkPolicy.REPLACE,
                             singleSyncWork
                         )
+                        
+                        SosRetrofitClient.service.dispatchSos(payload)
+                        android.util.Log.d("SosConfirmScreen", "Payload sent to dashboard successfully")
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        android.util.Log.e("SosConfirmScreen", "Failed to dispatch SOS payload", e)
                     }
-
-                    coroutineScope.launch(Dispatchers.IO) {
-                        try {
-                            SosRetrofitClient.service.dispatchSos(payload)
-                            android.util.Log.d("SosConfirmScreen", "Payload sent to dashboard successfully")
-                        } catch (e: Exception) {
-                            android.util.Log.e("SosConfirmScreen", "Failed to dispatch SOS payload", e)
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("SosApiError", "Failed to compile SOS payload", e)
                 }
-                
-                // Do not wait out of state to fire phone call to avoid Background Activity Launch limitations
-                // Instead of state transitioning and delaying, we trigger SMS and Call at the same time
-
+            } catch (e: Exception) {
+                android.util.Log.e("SosApiPayloadError", "Failed to insert backup or launch dispatch", e)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SosApiError", "Failed to compile SOS payload", e)
+        }
+        
+        try {
+            val mapUrl = "https://www.google.com/maps/search/?api=1&query=${location?.latitude ?: 0.0},${location?.longitude ?: 0.0}"
+            val message = "SOS! I need help. My current location is: $mapUrl"
+            val contacts = withContext(Dispatchers.IO) {
+                AppDatabase.getDatabase(context).contactDao().getContactsList()
+            }
+            
+            // Send SMS
+            if (contacts.isNotEmpty()) {
                 try {
-                    val mapUrl = "https://www.google.com/maps/search/?api=1&query=${location?.latitude ?: 0.0},${location?.longitude ?: 0.0}"
-                    val message = "SOS! I need help. My current location is: $mapUrl"
-                    val contacts = withContext(Dispatchers.IO) {
-                        AppDatabase.getDatabase(context).contactDao().getContactsList()
-                    }
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
-                        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val hasSmsPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                    if (hasSmsPerm) {
+                        val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             context.getSystemService(SmsManager::class.java)
                         } else {
                             @Suppress("DEPRECATION")
                             SmsManager.getDefault()
                         }
-                        contacts.forEach { contact ->
+                        for (contact in contacts) {
                             try {
-                                val parts = smsManager?.divideMessage(message)
-                                if (parts != null) {
-                                    smsManager.sendMultipartTextMessage(contact.phoneNumber, null, parts, null, null)
-                                } else {
-                                    // Fallback if divideMessage fails
-                                    smsManager?.sendTextMessage(contact.phoneNumber, null, message, null, null)
-                                }
+                                smsManager.sendTextMessage(contact.phoneNumber, null, message, null, null)
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         }
-                    }
-                    
-                    // Fallback to manual intent if no permission or as a backup
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-                        if (contacts.isNotEmpty()) {
-                            try {
-                                val numbers = contacts.joinToString(";") { it.phoneNumber }
-                                val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
-                                    data = Uri.parse("smsto:$numbers")
-                                    putExtra("sms_body", message)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                                }
-                                context.startActivity(smsIntent)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    }
-
-                    // Trigger loud dial
-                    val contactToCall = contacts.firstOrNull()?.phoneNumber ?: "112"
-                    try {
-                        val callIntent = Intent(Intent.ACTION_CALL).apply {
-                            data = Uri.parse("tel:$contactToCall")
+                    } else {
+                        val numbers = contacts.joinToString(";") { it.phoneNumber }
+                        val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("smsto:$numbers")
+                            putExtra("sms_body", message)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                         }
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                            context.startActivity(callIntent)
-                        } else {
-                            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                                data = Uri.parse("tel:112")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                            }
-                            context.startActivity(dialIntent)
-                        }
-                    } catch (e: Exception) {
-                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                            data = Uri.parse("tel:112")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                        }
-                        try {
-                            context.startActivity(dialIntent)
-                        } catch (ex: Exception) {
-                            ex.printStackTrace()
-                        }
+                        context.startActivity(smsIntent)
                     }
-
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
 
-                state = SosConfirmState.COMPLETED
+            // Always call first contact or 112
+            val contactToCall = contacts.firstOrNull()?.phoneNumber ?: "112"
+            try {
+                val hasCallPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+                val callAction = if (hasCallPerm) Intent.ACTION_CALL else Intent.ACTION_DIAL
+                val dialIntent = Intent(callAction).apply {
+                    data = Uri.parse("tel:$contactToCall")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                }
+                context.startActivity(dialIntent)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            SosConfirmState.SILENT_SENT_WAITING_FOR_LOUD -> {
-                // Not used anymore
-            }
-            SosConfirmState.COMPLETED -> {
-                // Nothing to do
-            }
+
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+
+        state = SosConfirmState.COMPLETED
     }
 
     Column(

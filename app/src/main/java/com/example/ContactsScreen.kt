@@ -138,7 +138,7 @@ fun ContactsScreen(location: Location?, viewModel: ContactsViewModel = viewModel
                                 readOnly = true,
                                 label = { Text("Code") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                modifier = Modifier.menuAnchor(),
+                                modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable),
                                 colors = textFieldColors,
                                 singleLine = true
                             )

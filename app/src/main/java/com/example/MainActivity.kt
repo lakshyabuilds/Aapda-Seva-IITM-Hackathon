@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,7 +65,6 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import com.example.data.AppDatabase
 import com.example.data.EmergencyServiceRepository
-import android.preference.PreferenceManager
 import org.osmdroid.config.Configuration
 
 class MainActivity : ComponentActivity() {
@@ -78,7 +78,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         try {
-            Configuration.getInstance().load(applicationContext, PreferenceManager.getDefaultSharedPreferences(applicationContext))
+            val prefs = applicationContext.getSharedPreferences(packageName + "_preferences", android.content.Context.MODE_PRIVATE)
+            Configuration.getInstance().load(applicationContext, prefs)
             Configuration.getInstance().userAgentValue = packageName
         } catch (e: Exception) {
             e.printStackTrace()
@@ -122,7 +123,7 @@ class MainActivity : ComponentActivity() {
             var currentLanguage by remember { mutableStateOf(initialLang) }
 
             val baseContext = androidx.compose.ui.platform.LocalContext.current
-            val locale = remember(currentLanguage) { java.util.Locale(currentLanguage) }
+            val locale = remember(currentLanguage) { java.util.Locale.forLanguageTag(currentLanguage) }
             val configuration = remember(currentLanguage, baseContext.resources.configuration) {
                 android.content.res.Configuration(baseContext.resources.configuration).apply {
                     setLocale(locale)
@@ -249,7 +250,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationBarItem(
-                                icon = { Icon(Icons.Filled.List, contentDescription = stringResource(id = R.string.nav_services)) },
+                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(id = R.string.nav_services)) },
                                 label = { Text(stringResource(id = R.string.nav_services)) },
                                 selected = currentRoute == "services_screen",
                                 onClick = {
@@ -503,11 +504,10 @@ fun SOSAppContent(
         if (hasLocationPerm && hasNotificationPerm) {
             val serviceIntent = Intent(context, SosBackgroundService::class.java)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
+                // Using startService instead of startForegroundService avoids the strict 
+                // system contract that crashes the app if startForeground() fails internally
+                // (e.g. due to Android 14+ permission race conditions or background start restrictions).
+                context.startService(serviceIntent)
             } catch (e: Exception) {
                 e.printStackTrace()
             }

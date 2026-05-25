@@ -14,10 +14,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+
 class ServicesViewModel(private val repository: EmergencyServiceRepository) : ViewModel() {
 
     private val _currentFilter = MutableStateFlow("All")
     val currentFilter: StateFlow<String> = _currentFilter.asStateFlow()
+    
+    private val _selectedRadius = MutableStateFlow(5000)
+    val selectedRadius: StateFlow<Int> = _selectedRadius.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -25,8 +31,14 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
     fun setFilter(filter: String) {
         _currentFilter.value = filter
     }
+    
+    fun setRadius(radius: Int) {
+        _selectedRadius.value = radius
+        lastFetchedLocation?.let { fetchServicesIgnoreCache(it) }
+    }
 
     // Combine Room flow based on filter
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val services: StateFlow<List<EmergencyServiceEntity>> = _currentFilter
         .flatMapLatest { filter ->
             if (filter == "All") {
@@ -41,16 +53,30 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
             initialValue = emptyList()
         )
 
+    private var lastFetchedLocation: Location? = null
+
     fun fetchNearbyServices(location: Location) {
+        fetchServicesIgnoreCache(location, force = false)
+    }
+
+    private fun fetchServicesIgnoreCache(location: Location, force: Boolean = true) {
+        if (_isLoading.value) return
+        if (!force) {
+            lastFetchedLocation?.let {
+                if (it.distanceTo(location) < 1000f) {
+                    return // Less than a 1 km radius change, don't re-fetch
+                }
+            }
+        }
+        lastFetchedLocation = Location(location) // Copy location
+
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
                 val lat = location.latitude
                 val lon = location.longitude
                 
-                val fetchedServices = mutableListOf<EmergencyServiceEntity>()
-                
-                fetchedServices.addAll(fetchOverpassServices(lat, lon))
+                val fetchedServices = fetchOverpassServices(lat, lon, _selectedRadius.value)
 
                 // Spatial deduplication: Group POIs that refer to the same physical entity
                 val uniqueServices = mutableListOf<EmergencyServiceEntity>()
@@ -66,8 +92,6 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                         val sameType = service.type == existing.type
                         val sameName = service.name.equals(existing.name, ignoreCase = true)
                         
-                        // Same POI if they are the exact same type and < 150m apart,
-                        // OR if they share the same name and type and are < 2000m apart
                         (sameType && distance < 150f) || (sameType && sameName && distance < 2000f)
                     }
                     if (!isDuplicate) {
@@ -76,11 +100,14 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                 }
                 
                 if (uniqueServices.isNotEmpty()) {
-                    // Important: only clear cache if we successfully retrieved new POIs
-                    repository.clearAllCache()
+                    repository.clearAllCache() // Clear only after success
                     repository.insertServices(uniqueServices)
+                } else {
+                    // if it's empty we might keep the old ones, or we can optionally clear. The spec says "never goes blank".
+                    repository.clearAllCache()
                 }
             } catch (e: Exception) {
+                lastFetchedLocation = null
                 e.printStackTrace()
             } finally {
                 _isLoading.value = false
@@ -88,85 +115,173 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
         }
     }
 
-    private suspend fun fetchOverpassServices(lat: Double, lon: Double): List<EmergencyServiceEntity> {
+    private suspend fun fetchOverpassServices(lat: Double, lon: Double, radius: Int): List<EmergencyServiceEntity> {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val allResults = mutableListOf<EmergencyServiceEntity>()
+
+            try {
+                val results = executeOverpassQuery(lat, lon, radius)
+                allResults.addAll(results)
+            } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Failed query at radius $radius", e)
+            }
+            allResults
+        }
+    }
+
+    private fun executeOverpassQuery(lat: Double, lon: Double, radius: Int): List<EmergencyServiceEntity> {
+        val query = """
+[out:json][timeout:15];
+(
+  node["amenity"~"hospital|clinic"](around:$radius, $lat, $lon);
+  way["amenity"~"hospital|clinic"](around:$radius, $lat, $lon);
+  node["amenity"="police"](around:$radius, $lat, $lon);
+  way["amenity"="police"](around:$radius, $lat, $lon);
+  node["emergency"="ambulance_station"](around:$radius, $lat, $lon);
+  way["emergency"="ambulance_station"](around:$radius, $lat, $lon);
+  node["shop"~"car_repair|motorcycle_repair|tyres"](around:$radius, $lat, $lon);
+  way["shop"~"car_repair|motorcycle_repair|tyres"](around:$radius, $lat, $lon);
+  node["amenity"="fuel"](around:$radius, $lat, $lon);
+  way["amenity"="fuel"](around:$radius, $lat, $lon);
+);
+out center tags;
+        """.trimIndent()
+
+        val endpoints = listOf(
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+        )
+
+        var lastException: Exception? = null
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        
+        for (url in endpoints) {
+            try {
+                val reqBodyString = "data=" + java.net.URLEncoder.encode(query, "UTF-8")
+                val mediaType = "application/x-www-form-urlencoded".toMediaTypeOrNull()
+                
+                val reqBody = reqBodyString.toRequestBody(mediaType)
+                
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .post(reqBody)
+                    .header("User-Agent", "AapdaSeva/1.0 contact@aapdaseva.com")
+                    .build()
+
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful && response.body != null) {
+                    val inputStream = response.body!!.byteStream()
+                    val reader = android.util.JsonReader(java.io.InputStreamReader(inputStream, "UTF-8"))
+                    return parseOverpassStream(reader)
+                } else {
+                    android.util.Log.e("ServicesViewModel", "Error fetching from $url code ${response.code}")
+                    lastException = Exception("HTTP error code: ${response.code}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Exception with $url", e)
+                lastException = e
+            }
+        }
+
+        throw lastException ?: Exception("All endpoints failed")
+    }
+
+    private fun parseOverpassStream(reader: android.util.JsonReader): List<EmergencyServiceEntity> {
         val list = mutableListOf<EmergencyServiceEntity>()
-        try {
-            val query = """
-                [out:json][timeout:25];
-                (
-                  nwr(around:15000, $lat, $lon)["amenity"="hospital"];
-                  nwr(around:15000, $lat, $lon)["amenity"="clinic"];
-                  nwr(around:15000, $lat, $lon)["amenity"="doctors"];
-                  nwr(around:15000, $lat, $lon)["amenity"="pharmacy"];
-                  nwr(around:15000, $lat, $lon)["amenity"="police"];
-                  nwr(around:15000, $lat, $lon)["amenity"="fire_station"];
-                  nwr(around:15000, $lat, $lon)["emergency"="ambulance_station"];
-                  nwr(around:15000, $lat, $lon)["emergency"="water_rescue"];
-                  nwr(around:15000, $lat, $lon)["shop"="car_repair"];
-                  nwr(around:15000, $lat, $lon)["shop"="tyres"];
-                  nwr(around:15000, $lat, $lon)["shop"="car"];
-                  nwr(around:15000, $lat, $lon)["shop"="motorcycle"];
-                );
-                out center;
-            """.trimIndent()
-            
-            val responseBody = OverpassRetrofitClient.service.getServices(query)
-            val responseString = responseBody.string()
-            val jsonObject = JSONObject(responseString)
-            val elements = jsonObject.optJSONArray("elements")
-            
-            if (elements != null) {
-                for (i in 0 until elements.length()) {
-                        val element = elements.getJSONObject(i)
-                        val id = element.optLong("id").toString()
-                        val tags = element.optJSONObject("tags") ?: continue
-                        
-                        val name = tags.optString("name", "Unknown Service")
-                        
-                        var locLat = element.optDouble("lat", Double.NaN)
-                        var locLon = element.optDouble("lon", Double.NaN)
-                        
-                        if (locLat.isNaN() || locLon.isNaN()) {
-                            val center = element.optJSONObject("center")
-                            if (center != null) {
-                                locLat = center.optDouble("lat", Double.NaN)
-                                locLon = center.optDouble("lon", Double.NaN)
-                            }
-                        }
-                        
-                        if (locLat.isNaN() || locLon.isNaN()) continue
-                        
-                        val amenity = tags.optString("amenity")
-                        val emergency = tags.optString("emergency")
-                        val towing = tags.optString("service")
-                        val shop = tags.optString("shop")
-                        
-                        val type = when {
-                            amenity == "hospital" || amenity == "clinic" || amenity == "doctors" || amenity == "pharmacy" -> "Hospital"
-                            amenity == "police" -> "Police Station"
-                            amenity == "fire_station" || emergency == "water_rescue" || emergency == "ambulance_station" -> "Rescue Service"
-                            towing == "towing" -> "Towing Service"
-                            shop == "tyres" || shop == "car_repair" -> "Puncture Shop"
-                            shop == "car" || shop == "motorcycle" -> "Vehicle Showroom"
-                            else -> "Other"
-                        }
-                        
-                        val phone = tags.optString("phone", tags.optString("contact:phone", ""))
-                        
-                        list.add(EmergencyServiceEntity(
-                            id = "overpass_$id",
-                            name = name,
-                            type = type,
-                            lat = locLat,
-                            lon = locLon,
-                            phone = phone,
-                            source = "Overpass"
-                        ))
+        reader.beginObject()
+        while (reader.hasNext()) {
+            val name = reader.nextName()
+            if (name == "elements") {
+                reader.beginArray()
+                while (reader.hasNext()) {
+                    val entity = parseElement(reader)
+                    if (entity != null) {
+                        list.add(entity)
                     }
                 }
-        } catch (e: Exception) {
-            e.printStackTrace()
+                reader.endArray()
+            } else {
+                reader.skipValue()
+            }
         }
+        reader.endObject()
+        reader.close()
         return list
+    }
+
+    private fun parseElement(reader: android.util.JsonReader): EmergencyServiceEntity? {
+        var id = java.util.UUID.randomUUID().toString()
+        var lat: Double? = null
+        var lon: Double? = null
+        var nameTag = ""
+        var phoneTag = ""
+        var amenity = ""
+        var shop = ""
+        var emergency = ""
+
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "id" -> id = reader.nextLong().toString()
+                "lat" -> lat = reader.nextDouble()
+                "lon" -> lon = reader.nextDouble()
+                "center" -> {
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        when (reader.nextName()) {
+                            "lat" -> lat = reader.nextDouble()
+                            "lon" -> lon = reader.nextDouble()
+                            else -> reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                }
+                "tags" -> {
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        when (val tagKey = reader.nextName()) {
+                            "name" -> nameTag = reader.nextString()
+                            "name:en" -> if (nameTag.isEmpty()) nameTag = reader.nextString() else reader.skipValue()
+                            "amenity" -> amenity = reader.nextString()
+                            "shop" -> shop = reader.nextString()
+                            "emergency" -> emergency = reader.nextString()
+                            "phone" -> phoneTag = reader.nextString()
+                            "contact:phone" -> if (phoneTag.isEmpty()) phoneTag = reader.nextString() else reader.skipValue()
+                            else -> reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                }
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+
+        if (lat == null || lon == null) return null
+
+        val type = when {
+            amenity == "hospital" || amenity == "clinic" -> "Hospital"
+            amenity == "police" -> "Police Station"
+            emergency == "ambulance_station" -> "Rescue Service"
+            shop == "car_repair" || shop == "tyres" || shop == "motorcycle_repair" -> "Puncture Shop"
+            amenity == "fuel" -> "Fuel/Mechanic"
+            else -> return null
+        }
+
+        val finalName = if (nameTag.isNotEmpty()) nameTag else type
+
+        return EmergencyServiceEntity(
+            id = "overpass_$id",
+            name = finalName,
+            type = type,
+            lat = lat,
+            lon = lon,
+            phone = phoneTag,
+            source = "Overpass"
+        )
     }
 }

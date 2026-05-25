@@ -134,7 +134,13 @@ class SosBackgroundService : Service(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         
-        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+            vm.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
 
         val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
         androidx.core.content.ContextCompat.registerReceiver(
@@ -221,14 +227,13 @@ class SosBackgroundService : Service(), SensorEventListener {
                     startForeground(NOTIFICATION_ID, notification)
                 } catch (ex: Exception) {
                     ex.printStackTrace()
-                    stopSelf()
                 }
             }
         } else {
             try {
                 startForeground(NOTIFICATION_ID, notification)
             } catch (e: Exception) {
-                stopSelf()
+                e.printStackTrace()
             }
         }
 
@@ -273,8 +278,8 @@ class SosBackgroundService : Service(), SensorEventListener {
 
         val notificationBuilder = NotificationCompat.Builder(this, "high_priority_sos")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("SOS Triggered")
-            .setContentText("Emergency countdown started!")
+            .setContentTitle("SOS Trigger Tracking Activated")
+            .setContentText("Tap here to start SOS transmission and capture emergency media!")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreenPendingIntent, true)
