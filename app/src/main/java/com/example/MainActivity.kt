@@ -677,8 +677,6 @@ fun SOSAppContent(
                     showPermissionRationale = true
                 } else if (!hasNotificationPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     showNotificationRationale = true
-                } else if (backgroundLocationState != null && backgroundLocationState.status.isGranted == false) {
-                    showBackgroundPermissionRationale = true
                 } else {
                     onSosClick()
                 }
