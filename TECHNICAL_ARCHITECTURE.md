@@ -35,11 +35,11 @@ To align with the hackathon's preference for scalable, open models and independe
 *   An accident often happens on a highway with zero/fluctuating cellular reception. Huge base64 encodings (audio/photos) can cause `SocketTimeoutExceptions`.
 *   **Logic:** The system utilizes a **Two-Phase Dispatch**:
     1.  **Phase 1 (`QUICK_DISPATCH`):** Within milliseconds of an SOS, a highly compressed JSON payload strictly adhering to standard schemas (containing location, nested `locationInfo`, and `battery`) goes out immediately to secure a Firestore database entry on the backend.
-    2.  **Phase 2 (`MULTI_TAP_SOS`):** Coroutines launch ambient device sensors for audio/photo arrays. Once resolved, the expanded payload is sent to append the pre-existing ID securely.
+    2.  **Phase 2 (`MULTI_TAP_SOS`):** Coroutines launch ambient device sensors for audio and photo arrays. The `StealthMediaCapture` module leverages CameraX to sequentially bind and capture images from **both front and back cameras**, minimizing blind-spots when the device is dropped. Once resolved, the expanded payload is sent to append the pre-existing ID securely.
 
 ### 2. Intelligent Geocoding for Native Dispatches
-*   Rather than hardcoding standard Indian numbers, the system acts universally. Utilizing Android's native `Geocoder`, the system retrieves the `Locale.countryCode` (e.g., "IN", "US", "GB"). 
-*   It immediately dials the appropriate National Helpline (112, 911, 999) using `Intent.ACTION_CALL` while explicitly messaging personal contacts natively via `SmsManager`.
+*   Rather than hardcoding standard Indian numbers, the system acts universally. Utilizing a dual-fallback approach, the system checks the `TelephonyManager` for network/SIM region, which operates instantly without network calls. 
+*   If the network is unavailable, it falls back to Android's `Geocoder` API (handling asynchronous callbacks on API 33+ safely) to determine the country. It immediately dials the appropriate National Helpline (112, 911, 999) using `Intent.ACTION_CALL` while explicitly messaging personal contacts natively via `SmsManager`.
 
 ### 3. Multi-Threading & Concurrency
 *   All API calls (Nominatim, Overpass) use `suspend` functions constrained to `Dispatchers.IO` to ensure the UI thread never drops a frame, crucial for a high-stress scenario where UI freezing is unacceptable.

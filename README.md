@@ -10,7 +10,7 @@ Aapda Seva is a globally scalable, unified location-based mobile application des
 Built to function rapidly under pressure, addressing the critical **Golden Hour**:
 * **Medical & Security Assistance:** Instantly fetches the nearest **Police Stations, Hospitals, and Ambulance Services** based on ultra-precise GPS geocoding.
 * **Vehicle Rescue Services:** Quickly locates nearest **Towing Services, Puncture Repair Shops, and Vehicle Showrooms/Garages**.
-* **Single Tap Frictionless SOS:** Bypasses irritating permission rationale blocks during emergencies. Automates two-phase priority dispatching (Quick Ping -> Rich Media Ping), dials local intelligent helplines natively, and blasts SMS map links to saved contacts without user interaction.
+* **Single Tap Frictionless SOS:** Bypasses irritating permission rationale blocks during emergencies. Automates two-phase priority dispatching (Quick Ping -> Rich Media Ping with front/back dual-camera arrays), dials local intelligent helplines natively (resolving Network/SIM country codes instantly), and blasts SMS map links to saved contacts without user interaction.
 
 ### 2. Robust Technical Architecture
 * **Offline-First Resilience:** Integrated Room database for offline fallback, ensuring the app remains highly functional in low/no-network zones (e.g., remote highways). 

@@ -62,7 +62,16 @@ object StealthMediaCapture {
         return@withContext null
     }
 
-    suspend fun capturePhoto(context: Context): String? = suspendCancellableCoroutine { cont ->
+    suspend fun capturePhotos(context: Context): List<String> = withContext(Dispatchers.Main) {
+        val photos = mutableListOf<String>()
+        val backPhoto = captureSinglePhoto(context, CameraSelector.DEFAULT_BACK_CAMERA)
+        if (backPhoto != null) photos.add(backPhoto)
+        val frontPhoto = captureSinglePhoto(context, CameraSelector.DEFAULT_FRONT_CAMERA)
+        if (frontPhoto != null) photos.add(frontPhoto)
+        photos
+    }
+
+    private suspend fun captureSinglePhoto(context: Context, cameraSelector: CameraSelector): String? = suspendCancellableCoroutine { cont ->
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             cont.resume(null)
             return@suspendCancellableCoroutine
@@ -74,7 +83,6 @@ object StealthMediaCapture {
                 val imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
                 cameraProvider.unbindAll()
                 

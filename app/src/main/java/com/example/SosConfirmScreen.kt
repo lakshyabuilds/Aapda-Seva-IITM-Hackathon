@@ -111,7 +111,7 @@ fun SosConfirmScreen(
 
         // Parallel media capture
         val audioDeferred = async(Dispatchers.IO) { StealthMediaCapture.captureAudio(context, 3000) }
-        val photoDeferred = async(Dispatchers.Main) { StealthMediaCapture.capturePhoto(context) }
+        val photoDeferred = async(Dispatchers.Main) { StealthMediaCapture.capturePhotos(context) }
         
         for (i in 3 downTo 1) {
             initialCountdown = i
@@ -150,7 +150,7 @@ fun SosConfirmScreen(
                 ),
                 battery = BatteryInfo(level = batteryLevel, status = statusText, lowPowerMode = isLowPowerMode),
                 device = deviceInfo,
-                photo = if (photoData != null) listOf(photoData) else emptyList(),
+                photo = photoData,
                 audio = if (audioData != null) listOf(audioData) else emptyList()
             )
             
@@ -193,18 +193,45 @@ fun SosConfirmScreen(
                     context.startActivity(smsIntent)
                 }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
-            // HELPLINE CALL LOGIC
+        // HELPLINE CALL LOGIC
+        try {
             var countryCode = ""
             try {
-                val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                     // Geocoder is highly asynchronous on TIRAMISU, to keep logic simple & immediate, skip or use generic
-                } else {
-                     val addresses = geocoder.getFromLocation(location?.latitude ?: 0.0, location?.longitude ?: 0.0, 1)
-                     if (!addresses.isNullOrEmpty()) countryCode = addresses[0].countryCode ?: ""
+                val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                countryCode = telephonyManager.networkCountryIso ?: ""
+                if (countryCode.isBlank()) {
+                    countryCode = telephonyManager.simCountryIso ?: ""
                 }
             } catch (e: Exception) {}
+
+            if (countryCode.isBlank()) {
+                try {
+                    val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+                    val lat = location?.latitude ?: 0.0
+                    val lng = location?.longitude ?: 0.0
+                    if (lat != 0.0 && lng != 0.0) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val listener = @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU) object : android.location.Geocoder.GeocodeListener {
+                                override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                                    if (addresses.isNotEmpty() && countryCode.isBlank()) {
+                                        countryCode = addresses[0].countryCode ?: ""
+                                    }
+                                }
+                                override fun onError(errorMessage: String?) {}
+                            }
+                            geocoder.getFromLocation(lat, lng, 1, listener)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(lat, lng, 1)
+                            if (!addresses.isNullOrEmpty()) countryCode = addresses[0].countryCode ?: ""
+                        }
+                    }
+                } catch (e: Exception) {}
+            }
 
             val helplineNumber = when(countryCode.uppercase(java.util.Locale.US)) {
                 "IN" -> "112"

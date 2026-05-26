@@ -39,10 +39,10 @@ In high-stress situations, users don't have time to navigate permissions or type
 - **Frictionless Trigger:** Removed all disruptive permission blocks; if a permission (like background location) isn't fully granted, the app degrades gracefully but *never* blocks the SOS execution.
 - **Phased Payload Architecture:** To combat spotty networks, SOS data is dispatched in prioritized tiers:
   - **Phase 1 (`QUICK_DISPATCH`):** Instantly pushes a lightweight JSON payload with GPS coordinates, battery level, and ID to the backend for immediate registry.
-  - **Phase 2 (`MULTI_TAP_SOS`):** In parallel, environmental media (audio & stealth photo) is captured. Upon completion, a secondary critical payload carrying base64 media arrays is dispatched.
+  - **Phase 2 (`MULTI_TAP_SOS`):** In parallel, environmental media is captured. It simultaneously triggers **both the front and back cameras** sequentially utilizing CameraX, maximizing the chance of capturing relevant surroundings regardless of the phone's physical orientation. Upon completion, the expanded critical payload with the base64 media arrays is dispatched.
 - **Native Contextual Communications:** 
-  - Iterates through the local Room emergency contact list, automatically firing native Android SMS intents with concatenated G-Maps coordinate links limit-bypassing standard intent restrictions.
-  - Generates reverse geocoding via `Geocoder` to fetch the device's ISO Country Code. A `when` block correctly translates the code (e.g., `IN` -> `112`, `US`/`CA` -> `911`, `GB` -> `999`) and instantly fires `ACTION_CALL`/`ACTION_DIAL`.
+  - Iterates through the local Room emergency contact list, automatically firing native Android SMS intents with concatenated G-Maps coordinate links.
+  - **Intelligent Dual-Fallback Helplines:** Instantly resolves the device's ISO Country Code by querying the `TelephonyManager` for network/SIM region (near 0ms latency), falling back to asynchronous `Geocoder` reverse mapping. A smart router evaluates this code (e.g., `IN` -> `112`, `US`/`CA` -> `911`, `GB` -> `999`) and universally triggers `ACTION_CALL`.
 
 ---
 
