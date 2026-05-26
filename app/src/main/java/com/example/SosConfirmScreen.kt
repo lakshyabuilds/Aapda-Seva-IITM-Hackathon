@@ -199,6 +199,9 @@ fun SosConfirmScreen(
 
         // HELPLINE CALL LOGIC
         try {
+            // Provide a small delay to ensure previous intents (like SMS) are not suppressed
+            delay(1500)
+
             var countryCode = ""
             try {
                 val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
@@ -209,28 +212,20 @@ fun SosConfirmScreen(
             } catch (e: Exception) {}
 
             if (countryCode.isBlank()) {
-                try {
-                    val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
-                    val lat = location?.latitude ?: 0.0
-                    val lng = location?.longitude ?: 0.0
-                    if (lat != 0.0 && lng != 0.0) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            val listener = @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU) object : android.location.Geocoder.GeocodeListener {
-                                override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                                    if (addresses.isNotEmpty() && countryCode.isBlank()) {
-                                        countryCode = addresses[0].countryCode ?: ""
-                                    }
-                                }
-                                override fun onError(errorMessage: String?) {}
-                            }
-                            geocoder.getFromLocation(lat, lng, 1, listener)
-                        } else {
+                val lat = location?.latitude ?: 0.0
+                val lng = location?.longitude ?: 0.0
+                if (lat != 0.0 && lng != 0.0) {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
                             @Suppress("DEPRECATION")
                             val addresses = geocoder.getFromLocation(lat, lng, 1)
-                            if (!addresses.isNullOrEmpty()) countryCode = addresses[0].countryCode ?: ""
+                            if (!addresses.isNullOrEmpty()) {
+                                countryCode = addresses[0].countryCode ?: ""
+                            }
                         }
-                    }
-                } catch (e: Exception) {}
+                    } catch (e: Exception) {}
+                }
             }
 
             val helplineNumber = when(countryCode.uppercase(java.util.Locale.US)) {
@@ -246,7 +241,7 @@ fun SosConfirmScreen(
             val callAction = if (hasCallPerm) Intent.ACTION_CALL else Intent.ACTION_DIAL
             val dialIntent = Intent(callAction).apply {
                 data = Uri.parse("tel:$helplineNumber")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(dialIntent)
 

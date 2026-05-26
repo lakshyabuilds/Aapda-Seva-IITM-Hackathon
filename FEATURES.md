@@ -42,7 +42,7 @@ In high-stress situations, users don't have time to navigate permissions or type
   - **Phase 2 (`MULTI_TAP_SOS`):** In parallel, environmental media is captured. It simultaneously triggers **both the front and back cameras** sequentially utilizing CameraX, maximizing the chance of capturing relevant surroundings regardless of the phone's physical orientation. Upon completion, the expanded critical payload with the base64 media arrays is dispatched.
 - **Native Contextual Communications:** 
   - Iterates through the local Room emergency contact list, automatically firing native Android SMS intents with concatenated G-Maps coordinate links.
-  - **Intelligent Dual-Fallback Helplines:** Instantly resolves the device's ISO Country Code by querying the `TelephonyManager` for network/SIM region (near 0ms latency), falling back to asynchronous `Geocoder` reverse mapping. A smart router evaluates this code (e.g., `IN` -> `112`, `US`/`CA` -> `911`, `GB` -> `999`) and universally triggers `ACTION_CALL`.
+  - **Intelligent Dual-Fallback Helplines:** Instantly resolves the device's ISO Country Code by querying the `TelephonyManager` for network/SIM region (near 0ms latency), falling back to synchronous `Geocoder` reverse mapping resolving correctly using `Dispatchers.IO`. A smart router evaluates this code (e.g., `IN` -> `112`, `US`/`CA` -> `911`, `GB` -> `999`). Utilizing strategic delays, it circumvents native OS intent conflicts with the SMS execution, ensuring `ACTION_CALL` universally triggers reliably without silent suppression.
 
 ---
 
