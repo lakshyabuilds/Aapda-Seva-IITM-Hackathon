@@ -237,7 +237,9 @@ class SosBackgroundService : Service(), SensorEventListener {
             }
         }
 
-        startTracking()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            startTracking()
+        }, 1000)
 
         return START_STICKY
     }

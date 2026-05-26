@@ -22,7 +22,7 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
     private val _currentFilter = MutableStateFlow("All")
     val currentFilter: StateFlow<String> = _currentFilter.asStateFlow()
     
-    private val _selectedRadius = MutableStateFlow(5000)
+    private val _selectedRadius = MutableStateFlow(15000)
     val selectedRadius: StateFlow<Int> = _selectedRadius.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -59,24 +59,35 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
         fetchServicesIgnoreCache(location, force = false)
     }
 
+    fun forceFetchNearbyServices(location: Location) {
+        fetchServicesIgnoreCache(location, force = true)
+    }
+
     private fun fetchServicesIgnoreCache(location: Location, force: Boolean = true) {
+        if (location.latitude == 0.0 && location.longitude == 0.0) {
+            android.util.Log.e("ServicesViewModel", "Fetch aborted: Location is 0.0, 0.0")
+            return
+        }
+
         if (_isLoading.value) return
         if (!force) {
             lastFetchedLocation?.let {
-                if (it.distanceTo(location) < 1000f) {
-                    return // Less than a 1 km radius change, don't re-fetch
+                if (it.distanceTo(location) < 100f) {
+                    android.util.Log.d("ServicesViewModel", "Fetch skipped: distance < 100m")
+                    return // Less than 100m radius change, don't re-fetch
                 }
             }
         }
-        lastFetchedLocation = Location(location) // Copy location
 
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
                 val lat = location.latitude
                 val lon = location.longitude
+                android.util.Log.d("ServicesViewModel", "Fetching services for lat: $lat, lon: $lon, radius: ${_selectedRadius.value}")
                 
                 val fetchedServices = fetchOverpassServices(lat, lon, _selectedRadius.value)
+                android.util.Log.d("ServicesViewModel", "Overpass returned ${fetchedServices.size} raw services")
 
                 // Spatial deduplication: Group POIs that refer to the same physical entity
                 val uniqueServices = mutableListOf<EmergencyServiceEntity>()
@@ -92,23 +103,26 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                         val sameType = service.type == existing.type
                         val sameName = service.name.equals(existing.name, ignoreCase = true)
                         
-                        (sameType && distance < 150f) || (sameType && sameName && distance < 2000f)
+                        (sameType && distance < 50f) || (sameType && sameName && distance < 500f)
                     }
                     if (!isDuplicate) {
                         uniqueServices.add(service)
                     }
                 }
                 
+                android.util.Log.d("ServicesViewModel", "After deduplication, kept ${uniqueServices.size} services")
+
                 if (uniqueServices.isNotEmpty()) {
-                    repository.clearAllCache() // Clear only after success
+                    repository.clearAllCache() // Clear only after success with data
                     repository.insertServices(uniqueServices)
+                    lastFetchedLocation = Location(location) // Copy location only on success
                 } else {
-                    // if it's empty we might keep the old ones, or we can optionally clear. The spec says "never goes blank".
-                    repository.clearAllCache()
+                    android.util.Log.w("ServicesViewModel", "0 services found after deduplication. Keeping old cache.")
+                    lastFetchedLocation = Location(location) // Still update location so we don't spam fetch for a genuinely empty area
                 }
             } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Fetch failed completely", e)
                 lastFetchedLocation = null
-                e.printStackTrace()
             } finally {
                 _isLoading.value = false
             }
@@ -124,6 +138,7 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
                 allResults.addAll(results)
             } catch (e: Exception) {
                 android.util.Log.e("ServicesViewModel", "Failed query at radius $radius", e)
+                throw e
             }
             allResults
         }
@@ -131,7 +146,7 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
 
     private fun executeOverpassQuery(lat: Double, lon: Double, radius: Int): List<EmergencyServiceEntity> {
         val query = """
-[out:json][timeout:15];
+[out:json][timeout:25];
 (
   node["amenity"~"hospital|clinic"](around:$radius, $lat, $lon);
   way["amenity"~"hospital|clinic"](around:$radius, $lat, $lon);
@@ -149,22 +164,23 @@ out center tags;
 
         val endpoints = listOf(
             "https://overpass-api.de/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter",
-            "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://z.overpass-api.de/api/interpreter",
+            "https://overpass.osm.ch/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter"
         )
 
         var lastException: Exception? = null
         val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .build()
         
         for (url in endpoints) {
             try {
-                val reqBodyString = "data=" + java.net.URLEncoder.encode(query, "UTF-8")
-                val mediaType = "application/x-www-form-urlencoded".toMediaTypeOrNull()
-                
-                val reqBody = reqBodyString.toRequestBody(mediaType)
+                val reqBody = okhttp3.FormBody.Builder()
+                    .add("data", query)
+                    .build()
                 
                 val request = okhttp3.Request.Builder()
                     .url(url)
@@ -269,7 +285,10 @@ out center tags;
             emergency == "ambulance_station" -> "Rescue Service"
             shop == "car_repair" || shop == "tyres" || shop == "motorcycle_repair" -> "Puncture Shop"
             amenity == "fuel" -> "Fuel/Mechanic"
-            else -> return null
+            else -> {
+                android.util.Log.d("ServicesViewModel", "Skipped element $id: amenity='$amenity', shop='$shop', emergency='$emergency'")
+                return null
+            }
         }
 
         val finalName = if (nameTag.isNotEmpty()) nameTag else type

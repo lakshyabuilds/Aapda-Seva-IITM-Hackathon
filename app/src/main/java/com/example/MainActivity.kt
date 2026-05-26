@@ -504,10 +504,11 @@ fun SOSAppContent(
         if (hasLocationPerm && hasNotificationPerm) {
             val serviceIntent = Intent(context, SosBackgroundService::class.java)
             try {
-                // Using startService instead of startForegroundService avoids the strict 
-                // system contract that crashes the app if startForeground() fails internally
-                // (e.g. due to Android 14+ permission race conditions or background start restrictions).
-                context.startService(serviceIntent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

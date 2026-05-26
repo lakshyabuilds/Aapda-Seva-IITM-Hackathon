@@ -239,7 +239,7 @@ fun ServicesScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = { 
                             if (location != null) {
-                                viewModel.fetchNearbyServices(location) 
+                                viewModel.forceFetchNearbyServices(location) 
                             }
                         }) {
                             Text("Retry Search")
