@@ -30,16 +30,19 @@ A categorized, easy-to-read list of every critical contact you might need during
 
 ---
 
-## 🚨 3. Single-Tap SOS Engine (`SosConfirmScreen` & `SosBackgroundService`)
+## 🚨 3. Single-Tap SOS Engine & Phased Dispatch
 
 **Non-Technical Overview:** 
-In high-stress situations, users don't have time to navigate. The SOS feature is a confirmed trigger that can operate quietly in the background, notifying authorities and generating an incident footprint without requiring continuous screen interaction.
+In high-stress situations, users don't have time to navigate permissions or type messages. Our fully frictionless SOS operates via a single tap. It instantly dispatches a silent ping to our dashboards, automatically messages your emergency contacts with an exact Google Maps location link via SMS, and universally calls the exact National Helpline (112, 911, 999) depending on your current geographical country.
 
 **Technical Overview:** 
-- **Component:** Android `Service` (Foreground/Background) and `WorkManager`.
-- **Logic:** Once confirmed via `SosConfirmScreen`, the `SosBackgroundService` initiates. It logs the exact incident timestamp and coordinates into the `IncidentBackupEntity` within the local Room database to prevent data loss.
-- **Stealth Media Capture:** Contains hooks via `StealthMediaCapture` for potential ambient environment documentation (e.g., photo/audio footprint) to assist police/insurance post-accident, adhering to strict Android sensor permissions.
-- **Syncing:** The `IncidentSyncWorker` (WorkManager) queues the SOS payload. If the user is offline, it waits for network reconnection to dispatch the SOS payloads to an external backend.
+- **Frictionless Trigger:** Removed all disruptive permission blocks; if a permission (like background location) isn't fully granted, the app degrades gracefully but *never* blocks the SOS execution.
+- **Phased Payload Architecture:** To combat spotty networks, SOS data is dispatched in prioritized tiers:
+  - **Phase 1 (`QUICK_DISPATCH`):** Instantly pushes a lightweight JSON payload with GPS coordinates, battery level, and ID to the backend for immediate registry.
+  - **Phase 2 (`MULTI_TAP_SOS`):** In parallel, environmental media (audio & stealth photo) is captured. Upon completion, a secondary critical payload carrying base64 media arrays is dispatched.
+- **Native Contextual Communications:** 
+  - Iterates through the local Room emergency contact list, automatically firing native Android SMS intents with concatenated G-Maps coordinate links limit-bypassing standard intent restrictions.
+  - Generates reverse geocoding via `Geocoder` to fetch the device's ISO Country Code. A `when` block correctly translates the code (e.g., `IN` -> `112`, `US`/`CA` -> `911`, `GB` -> `999`) and instantly fires `ACTION_CALL`/`ACTION_DIAL`.
 
 ---
 
