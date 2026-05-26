@@ -37,23 +37,44 @@ class ServicesViewModel(private val repository: EmergencyServiceRepository) : Vi
         lastFetchedLocation?.let { fetchServicesIgnoreCache(it) }
     }
 
+    private val _lastLocation = MutableStateFlow<Location?>(null)
+    private var lastFetchedLocation: Location?
+        get() = _lastLocation.value
+        set(value) {
+            _lastLocation.value = value
+        }
+
     // Combine Room flow based on filter
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val services: StateFlow<List<EmergencyServiceEntity>> = _currentFilter
-        .flatMapLatest { filter ->
+    val services: StateFlow<List<EmergencyServiceEntity>> = combine(
+        _currentFilter.flatMapLatest { filter ->
             if (filter == "All") {
                 repository.allServices
             } else {
                 repository.getServicesByType(filter)
             }
+        },
+        _lastLocation
+    ) { list, location ->
+        if (location == null) {
+            list
+        } else {
+            list.sortedBy { service ->
+                val results = FloatArray(1)
+                Location.distanceBetween(
+                    location.latitude, location.longitude,
+                    service.lat, service.lon,
+                    results
+                )
+                results[0]
+            }
         }
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-
-    private var lastFetchedLocation: Location? = null
 
     fun fetchNearbyServices(location: Location) {
         fetchServicesIgnoreCache(location, force = false)
