@@ -30,6 +30,23 @@ A categorized, easy-to-read list of every critical contact you might need during
 
 ---
 
+## 🗺️ 4. Localized Map Vectors
+**Non-Technical Overview:** 
+The application renders specific services using highly scannable, distinctive visual icons (e.g., Red cross for hospitals, Orange fire for fire stations) ensuring zero map-glance confusion.
+
+**Technical Overview:** 
+- **Osmdroid Overlays:** Assigns custom XML vector drawables directly to Osmdroid `Marker` clusters by parsing the `.type` attribute emitted from the localized Overpass mapping fetch logic.
+
+---
+
+## 🚫 5. AI Vocal Suppression & Hardware Toggles
+**Non-Technical Overview:** 
+Users now have complete control over AI vocal outputs, and are actively warned at the highest level if their tracking capabilities are manually jammed despite accepting software permissions.
+
+**Technical Overview:** 
+- **TTS Lifecycle:** Features an immediate `volume_off` flush operation that terminates any existing `TextToSpeech` asynchronous output queues.
+- **Hardware-Level Sensor Audits:** Initiates `LocationManager.isLocationEnabled` audits on application entry inside a `LaunchedEffect`, dynamically rendering a Material `AlertDialog` block pointing directly to Android's native Settings router if geolocation is inherently suspended.
+
 ## 🚨 3. Single-Tap SOS Engine & Phased Dispatch
 
 **Non-Technical Overview:** 

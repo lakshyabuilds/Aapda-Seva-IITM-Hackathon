@@ -187,6 +187,44 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var showLocationOffAlert by remember { mutableStateOf(false) }
+
+                LaunchedEffect(Unit) {
+                    val locationManager = applicationContext.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        if (!locationManager.isLocationEnabled) {
+                            showLocationOffAlert = true
+                        }
+                    } else {
+                        val isGpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                        val isNetworkEnabled = locationManager.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+                        if (!isGpsEnabled && !isNetworkEnabled) {
+                            showLocationOffAlert = true
+                        }
+                    }
+                }
+
+                if (showLocationOffAlert) {
+                    AlertDialog(
+                        onDismissRequest = { showLocationOffAlert = false },
+                        title = { Text("Location Services Disabled") },
+                        text = { Text("Your device's location services are currently turned off. Please enable them in your device settings for accurate emergency tracking.") },
+                        confirmButton = {
+                            TextButton(onClick = { 
+                                showLocationOffAlert = false 
+                                startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                            }) {
+                                Text("Open Settings")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showLocationOffAlert = false }) {
+                                Text("Dismiss")
+                            }
+                        }
+                    )
+                }
+
                 @OptIn(ExperimentalMaterial3Api::class)
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),

@@ -314,6 +314,16 @@ fun OsmMapView(
             idsToAdd.forEach { id ->
                 val poi = pois.first { it.id == id }
                 val poiMarker = Marker(map)
+                val iconRes = when (poi.type) {
+                    "hospital" -> R.drawable.ic_poi_hospital
+                    "police" -> R.drawable.ic_poi_police
+                    "fire_station" -> R.drawable.ic_poi_fire
+                    "clinic" -> R.drawable.ic_poi_clinic
+                    else -> R.drawable.ic_poi_hospital
+                }
+                androidx.core.content.ContextCompat.getDrawable(context, iconRes)?.let {
+                    poiMarker.icon = it
+                }
                 poiMarker.position = GeoPoint(poi.lat, poi.lon)
                 poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 poiMarker.title = poi.name
