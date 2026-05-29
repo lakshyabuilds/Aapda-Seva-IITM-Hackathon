@@ -30,7 +30,7 @@ A categorized, easy-to-read list of every critical contact you might need during
 
 ---
 
-## 🗺️ 3. Localized Map Vectors
+## 🗺️ 4. Localized Map Vectors
 **Non-Technical Overview:** 
 The application renders specific services using highly scannable, distinctive visual icons (e.g., Red cross for hospitals, Orange fire for fire stations) ensuring zero map-glance confusion.
 
@@ -39,7 +39,7 @@ The application renders specific services using highly scannable, distinctive vi
 
 ---
 
-## 🚫 4. AI Vocal Suppression & Hardware Toggles
+## 🚫 5. AI Vocal Suppression & Hardware Toggles
 **Non-Technical Overview:** 
 Users now have complete control over AI vocal outputs, and are actively warned at the highest level if their tracking capabilities are manually jammed despite accepting software permissions.
 
@@ -47,7 +47,7 @@ Users now have complete control over AI vocal outputs, and are actively warned a
 - **TTS Lifecycle:** Features an immediate `volume_off` flush operation that terminates any existing `TextToSpeech` asynchronous output queues.
 - **Hardware-Level Sensor Audits:** Initiates `LocationManager.isLocationEnabled` audits on application entry inside a `LaunchedEffect`, dynamically rendering a Material `AlertDialog` block pointing directly to Android's native Settings router if geolocation is inherently suspended.
 
-## 🚨 5. Single-Tap SOS Engine & Phased Dispatch
+## 🚨 3. Single-Tap SOS Engine & Phased Dispatch
 
 **Non-Technical Overview:** 
 In high-stress situations, users don't have time to navigate permissions or type messages. Our fully frictionless SOS operates via a single tap. It instantly dispatches a silent ping to our dashboards, automatically messages your emergency contacts with an exact Google Maps location link via SMS, and universally calls the exact National Helpline (112, 911, 999) depending on your current geographical country.
@@ -63,7 +63,7 @@ In high-stress situations, users don't have time to navigate permissions or type
 
 ---
 
-## 🤖 6. AI-Powered Medical & Procedural Assistance (`AiHelpScreen`)
+## 🤖 4. AI-Powered Medical & Procedural Assistance (`AiHelpScreen`)
 
 **Non-Technical Overview:** 
 While waiting for an ambulance, bystanders often don't know what to do. The AI Help Screen provides immediate, specialized instructions (e.g., "How to stop bleeding," "How to secure the accident scene") using intelligent suggestions.
@@ -75,7 +75,7 @@ While waiting for an ambulance, bystanders often don't know what to do. The AI H
 
 ---
 
-## 👤 7. Profile & Medical ID (`ProfileScreen`)
+## 👤 5. Profile & Medical ID (`ProfileScreen`)
 
 **Non-Technical Overview:** 
 A securely stored personal passport. It contains the user's blood type, emergency contacts, and preexisting medical conditions. If the user is the victim, a first responder can view this to administer safe medical care.

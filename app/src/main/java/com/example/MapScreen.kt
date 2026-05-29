@@ -321,14 +321,8 @@ fun OsmMapView(
                     "clinic" -> R.drawable.ic_poi_clinic
                     else -> R.drawable.ic_poi_hospital
                 }
-                androidx.core.content.ContextCompat.getDrawable(context, iconRes)?.let { drawable ->
-                    val width = Math.max(1, drawable.intrinsicWidth)
-                    val height = Math.max(1, drawable.intrinsicHeight)
-                    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(bitmap)
-                    drawable.setBounds(0, 0, canvas.width, canvas.height)
-                    drawable.draw(canvas)
-                    poiMarker.icon = android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
+                androidx.core.content.ContextCompat.getDrawable(context, iconRes)?.let {
+                    poiMarker.icon = it
                 }
                 poiMarker.position = GeoPoint(poi.lat, poi.lon)
                 poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
